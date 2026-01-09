@@ -301,3 +301,9 @@ add_executable(multi_proof_test
     examples/multi_proof_test.cpp
 )
 target_link_libraries(multi_proof_test vampire_lib)
+
+add_executable(benchmark
+    EXCLUDE_FROM_ALL  # only build when explicitly requested
+    examples/benchmark.cpp
+)
+target_link_libraries(benchmark vampire_lib)

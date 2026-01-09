@@ -59,16 +59,26 @@ enum class ProofResult {
 void init();
 
 /**
- * Prepare for running another proof.
+ * Prepare for running another proof (light reset).
  * Call this between independent proving attempts to reset
  * the global ordering and other per-proof state.
  *
  * Note: This does NOT reset the signature - symbols accumulate
- * between proofs. This is harmless as long as symbol names don't
- * conflict. A full reset is not possible due to static caches in
- * the AtomicSort implementation.
+ * between proofs. Use reset() for a full reset.
  */
 void prepareForNextProof();
+
+/**
+ * Fully reset the Vampire state for a fresh start.
+ * This resets all static caches, clears the signature, and
+ * reinitializes the environment. After calling this, the
+ * state is as if Vampire was just started.
+ *
+ * Call this between proofs if you want to reuse symbol names
+ * without conflicts, or to prevent memory growth from accumulated
+ * symbols and caches.
+ */
+void reset();
 
 /**
  * Access the options object for configuration.

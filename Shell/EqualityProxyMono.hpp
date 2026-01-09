@@ -56,6 +56,9 @@ public:
   EqualityProxyMono(Options::EqualityProxy opt);
 
   void apply(Problem& prb);
+
+  /** Reset static caches (for library use when running multiple proofs) */
+  static void resetStaticCaches();
   void apply(UnitList*& units);
   Clause* apply(Clause* cl);
 private:

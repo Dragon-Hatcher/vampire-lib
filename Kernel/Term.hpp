@@ -507,8 +507,11 @@ public:
   static Term* create2(unsigned fn, TermList arg1, TermList arg2);
 
   //** fool constants
-  static Term* foolTrue(); 
-  static Term* foolFalse(); 
+  static Term* foolTrue();
+  static Term* foolFalse();
+
+  /** Reset all static caches (for library use when running multiple proofs) */
+  static void resetStaticCaches(); 
 
   /** Return number of bytes before the start of the term that belong to it */
   size_t getPreDataSize() { return isSpecial() ? sizeof(SpecialTermData) : 0; }
@@ -1059,6 +1062,9 @@ public:
   static TermList intSort();
   static TermList realSort();
   static TermList rationalSort();
+
+  /** Reset all static caches (for library use when running multiple proofs) */
+  static void resetStaticCaches();
 
 private:
 

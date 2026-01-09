@@ -72,6 +72,9 @@ public:
    *  If this fails, returns null, otherwise returns a non-null object. */
   static const PartialOrdering* set(const PartialOrdering* po, size_t x, size_t y, PoComp v);
 
+  /** Reset static caches (for library use when running multiple proofs) */
+  static void resetStaticCaches();
+
   friend std::ostream& operator<<(std::ostream& str, const PartialOrdering& po);
 
 private:

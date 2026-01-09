@@ -61,6 +61,9 @@ public:
   /** Set relation between two terms given by a term ordering constraint. */
   static const TermPartialOrdering* set(const TermPartialOrdering* tpo, TermOrderingConstraint con);
 
+  /** Reset static caches (for library use when running multiple proofs) */
+  static void resetStaticCaches();
+
   friend std::ostream& operator<<(std::ostream& str, const TermPartialOrdering& tpo);
 
 private:

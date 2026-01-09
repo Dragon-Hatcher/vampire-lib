@@ -1252,17 +1252,40 @@ Term* Term::create2(unsigned fn, TermList arg1, TermList arg2)
 Term* Term::create(unsigned fn, std::initializer_list<TermList> args)
 { return Term::create(fn, args.size(), args.begin()); }
 
+// Static cached pointers for singleton terms (resettable for library use)
+static Term* s_foolTrue = nullptr;
+static Term* s_foolFalse = nullptr;
+static AtomicSort* s_superSort = nullptr;
+static AtomicSort* s_defaultSort = nullptr;
+static AtomicSort* s_boolSort = nullptr;
+static AtomicSort* s_intSort = nullptr;
+static AtomicSort* s_realSort = nullptr;
+static AtomicSort* s_ratSort = nullptr;
+static bool s_arrowInitialized = false;
+static unsigned s_arrowConstructor = 0;
+
 /**
  * Create singleton FOOL constants
  */
 Term* Term::foolTrue(){
-  static Term* _foolTrue = createConstant(env.signature->getFoolConstantSymbol(true));
-  return _foolTrue;
+  if (!s_foolTrue) {
+    s_foolTrue = createConstant(env.signature->getFoolConstantSymbol(true));
+  }
+  return s_foolTrue;
 }
 
 Term* Term::foolFalse(){
-  static Term* _foolFalse = createConstant(env.signature->getFoolConstantSymbol(false));
-  return _foolFalse;
+  if (!s_foolFalse) {
+    s_foolFalse = createConstant(env.signature->getFoolConstantSymbol(false));
+  }
+  return s_foolFalse;
+}
+
+void Term::resetStaticCaches() {
+  // Note: we don't delete the terms since they're managed by TermSharing
+  // or are non-shared. We just clear the pointers so they get re-created.
+  s_foolTrue = nullptr;
+  s_foolFalse = nullptr;
 }
 
 /*
@@ -1270,37 +1293,70 @@ Term* Term::foolFalse(){
  * and also is not linked to a symbol in the signature.
  */
 TermList AtomicSort::superSort(){
-  static AtomicSort* _super = createNonSharedConstant(0);
-  return TermList(_super);
+  if (!s_superSort) {
+    s_superSort = createNonSharedConstant(0);
+  }
+  return TermList(s_superSort);
 }
 
 TermList AtomicSort::defaultSort(){
-  static AtomicSort* _default = createConstant(env.signature->getDefaultSort());
-  return TermList(_default);
+  if (!s_defaultSort) {
+    s_defaultSort = createConstant(env.signature->getDefaultSort());
+  }
+  return TermList(s_defaultSort);
 }
 
 TermList AtomicSort::boolSort(){
-  static AtomicSort* _bool = createConstant(env.signature->getBoolSort());
-  return TermList(_bool);
+  if (!s_boolSort) {
+    s_boolSort = createConstant(env.signature->getBoolSort());
+  }
+  return TermList(s_boolSort);
 }
 
 TermList AtomicSort::intSort(){
-  static AtomicSort* _int = createConstant(env.signature->getIntSort());
-  return TermList(_int);
+  if (!s_intSort) {
+    s_intSort = createConstant(env.signature->getIntSort());
+  }
+  return TermList(s_intSort);
 }
 
 TermList AtomicSort::realSort(){
-  static AtomicSort* _real = createConstant(env.signature->getRealSort());
-  return TermList(_real);
+  if (!s_realSort) {
+    s_realSort = createConstant(env.signature->getRealSort());
+  }
+  return TermList(s_realSort);
 }
 
 TermList AtomicSort::rationalSort(){
-  static AtomicSort* _rat = createConstant(env.signature->getRatSort());
-  return TermList(_rat);
+  if (!s_ratSort) {
+    s_ratSort = createConstant(env.signature->getRatSort());
+  }
+  return TermList(s_ratSort);
+}
+
+void AtomicSort::resetStaticCaches() {
+  // Note: s_superSort is non-shared - we deallocate it properly
+  // For a constant sort (arity 0), size is sizeof(Term)
+  if (s_superSort) {
+    size_t sz = sizeof(Term) + s_superSort->arity() * sizeof(TermList);
+    DEALLOC_KNOWN(s_superSort, sz, "Term");
+    s_superSort = nullptr;
+  }
+  // The others are shared and managed by TermSharing
+  s_defaultSort = nullptr;
+  s_boolSort = nullptr;
+  s_intSort = nullptr;
+  s_realSort = nullptr;
+  s_ratSort = nullptr;
+  s_arrowInitialized = false;
 }
 
 TermList AtomicSort::arrowSort(TermList s1, TermList s2) {
-  static unsigned arrow = env.signature->getArrowConstructor();
+  if (!s_arrowInitialized) {
+    s_arrowConstructor = env.signature->getArrowConstructor();
+    s_arrowInitialized = true;
+  }
+  unsigned arrow = s_arrowConstructor;
 
   return TermList(create2(arrow, s1, s2));
 }

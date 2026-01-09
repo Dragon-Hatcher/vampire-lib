@@ -41,6 +41,11 @@
 
 #include "Kernel/MainLoop.hpp"
 #include "Kernel/Ordering.hpp"
+#include "Kernel/PartialOrdering.hpp"
+#include "Kernel/TermPartialOrdering.hpp"
+#include "Kernel/TermOrderingDiagram.hpp"
+
+#include "Shell/EqualityProxyMono.hpp"
 
 namespace Api {
 
@@ -62,6 +67,41 @@ void init() {
 void prepareForNextProof() {
     // Reset the global ordering so the next proof can set its own
     Ordering::unsetGlobalOrdering();
+}
+
+void reset() {
+    // Reset the global ordering
+    Ordering::unsetGlobalOrdering();
+
+    // Reset all static caches in the kernel
+    Term::resetStaticCaches();
+    AtomicSort::resetStaticCaches();
+    PartialOrdering::resetStaticCaches();
+    TermPartialOrdering::resetStaticCaches();
+    TermOrderingDiagram::resetStaticCaches();
+
+    // Reset shell static caches
+    EqualityProxyMono::resetStaticCaches();
+
+    // Reset the inference store
+    InferenceStore::instance()->reset();
+
+    // Delete and recreate the environment components
+    // Note: Order matters here due to dependencies
+    delete env.sharing;
+    delete env.signature;
+    delete env.statistics;
+
+    env.signature = new Signature();
+    env.signature->addEquality();  // Must add equality predicate (normally done in Environment constructor)
+    env.sharing = new TermSharing();
+    env.statistics = new Statistics();
+
+    // Reset the main problem reference
+    // Note: We don't delete the old problem as it may still be referenced
+    // by the user. The user is responsible for managing problem lifetime.
+
+    s_initialized = true;
 }
 
 Options& options() {

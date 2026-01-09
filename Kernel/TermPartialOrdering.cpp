@@ -14,11 +14,16 @@
 
 #include <cstring>
 
+#include "Lib/DHMap.hpp"
 #include "TermPartialOrdering.hpp"
 
 namespace Kernel {
 
 using namespace std;
+
+// File-scope static caches (resettable for library use)
+static DHMap<std::tuple<const TermPartialOrdering*, TermList, TermList, Result>, const TermPartialOrdering*> s_setCache;
+static TermPartialOrdering* s_emptyTPO = nullptr;
 
 // Helper functions
 
@@ -124,15 +129,16 @@ bool TermPartialOrdering::get(TermList lhs, TermList rhs, Result& res) const
 
 const TermPartialOrdering* TermPartialOrdering::getEmpty(const Ordering& ord)
 {
-  static TermPartialOrdering empty(ord);
-  return &empty;
+  if (!s_emptyTPO) {
+    s_emptyTPO = new TermPartialOrdering(ord);
+  }
+  return s_emptyTPO;
 }
 
 const TermPartialOrdering* TermPartialOrdering::set(const TermPartialOrdering* tpo, TermOrderingConstraint con)
 {
-  static DHMap<std::tuple<const TermPartialOrdering*, TermList, TermList, Result>, const TermPartialOrdering*> cache;
   const TermPartialOrdering** ptr;
-  if (cache.getValuePtr(make_tuple(tpo, con.lhs, con.rhs, con.rel), ptr, nullptr)) {
+  if (s_setCache.getValuePtr(make_tuple(tpo, con.lhs, con.rhs, con.rel), ptr, nullptr)) {
     auto res = new TermPartialOrdering(*tpo);
     if (!res->set(con)) {
       delete res;
@@ -142,6 +148,15 @@ const TermPartialOrdering* TermPartialOrdering::set(const TermPartialOrdering* t
     }
   }
   return *ptr;
+}
+
+void TermPartialOrdering::resetStaticCaches()
+{
+  s_setCache.reset();
+  if (s_emptyTPO) {
+    delete s_emptyTPO;
+    s_emptyTPO = nullptr;
+  }
 }
 
 PoComp TermPartialOrdering::getOneExternal(TermList t, size_t idx) const

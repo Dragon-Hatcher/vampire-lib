@@ -29,12 +29,13 @@ static Ordering::Result kGtPtr = Ordering::GREATER;
 static Ordering::Result kEqPtr = Ordering::EQUAL;
 static Ordering::Result kLtPtr = Ordering::LESS;
 
+// File-scope static cache (resettable for library use)
+static Map<tuple<TermList,TermList>,TermOrderingDiagram*> s_singleComparisonCache;
+
 TermOrderingDiagram* TermOrderingDiagram::createForSingleComparison(const Ordering& ord, TermList lhs, TermList rhs)
 {
-  static Map<tuple<TermList,TermList>,TermOrderingDiagram*> cache; // TODO this leaks now
-
   TermOrderingDiagram** ptr;
-  if (cache.getValuePtr({ lhs, rhs }, ptr, nullptr)) {
+  if (s_singleComparisonCache.getValuePtr({ lhs, rhs }, ptr, nullptr)) {
     *ptr = ord.createTermOrderingDiagram(/*ground*/true).release();
     (*ptr)->_source = Branch(lhs, rhs);
     (*ptr)->_source.node()->gtBranch  = Branch(&kGtPtr, (*ptr)->_sink);
@@ -42,6 +43,13 @@ TermOrderingDiagram* TermOrderingDiagram::createForSingleComparison(const Orderi
     (*ptr)->_source.node()->ngeBranch = Branch(&kLtPtr, (*ptr)->_sink);
   }
   return *ptr;
+}
+
+void TermOrderingDiagram::resetStaticCaches()
+{
+  // Note: this leaks the TermOrderingDiagram* values in the cache
+  // but clearing them properly requires iterating and deleting each
+  s_singleComparisonCache.reset();
 }
 
 bool TermOrderingDiagram::extendVarsGreater(TermOrderingDiagram* tod, const SubstApplicator* appl, POStruct& po_struct)

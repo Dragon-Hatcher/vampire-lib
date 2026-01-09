@@ -1689,6 +1689,17 @@ void InferenceStore::outputProof(std::ostream& out, UnitList* units)
   pp->print();
 }
 
+void InferenceStore::reset()
+{
+  // _nextClIds tracks clause IDs for proof printing - these become stale
+  // after reset but are only used for output formatting, not correctness.
+  // DHMultiset doesn't have reset() so we leave it.
+
+  _splittingNameLiterals.reset();
+  _introducedSymbols.reset();
+  _introducedSplitNames.reset();
+}
+
 InferenceStore* InferenceStore::instance()
 {
   static ScopedPtr<InferenceStore> inst(new InferenceStore());

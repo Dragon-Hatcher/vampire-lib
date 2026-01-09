@@ -38,6 +38,9 @@ class InferenceStore
 public:
   static InferenceStore* instance();
 
+  /** Reset internal state (for library use when running multiple proofs) */
+  void reset();
+
   typedef List<int> IntList;
 
   struct FullInference

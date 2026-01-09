@@ -53,6 +53,9 @@ public:
   static TermOrderingDiagram* createForSingleComparison(const Ordering& ord, TermList lhs, TermList rhs);
   static bool extendVarsGreater(TermOrderingDiagram* tod, const SubstApplicator* appl, POStruct& po_struct);
 
+  /** Reset static caches (for library use when running multiple proofs) */
+  static void resetStaticCaches();
+
   TermOrderingDiagram(const Ordering& ord, bool ground);
   virtual ~TermOrderingDiagram();
 

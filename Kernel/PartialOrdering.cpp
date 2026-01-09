@@ -16,6 +16,7 @@
 #include <iomanip>
 
 #include "PartialOrdering.hpp"
+#include "Lib/DHMap.hpp"
 #include "Lib/Stack.hpp"
 #include "Lib/Metaiterators.hpp"
 
@@ -29,6 +30,11 @@
 namespace Kernel {
 
 using namespace std;
+
+// File-scope static caches (resettable for library use)
+static DHMap<std::tuple<const PartialOrdering*, size_t, size_t, PoComp>, const PartialOrdering*> s_setCache;
+static DHMap<const PartialOrdering*, const PartialOrdering*> s_extendCache;
+static PartialOrdering* s_emptyOrdering = nullptr;
 
 constexpr PoComp reverse(PoComp v) {
   switch (v) {
@@ -157,8 +163,10 @@ PoComp PartialOrdering::get(size_t x, size_t y) const
 
 const PartialOrdering* PartialOrdering::getEmpty()
 {
-  static PartialOrdering empty;
-  return &empty;
+  if (!s_emptyOrdering) {
+    s_emptyOrdering = new PartialOrdering();
+  }
+  return s_emptyOrdering;
 }
 
 const PartialOrdering* PartialOrdering::set(const PartialOrdering* po, size_t x, size_t y, PoComp v)
@@ -171,10 +179,8 @@ const PartialOrdering* PartialOrdering::set(const PartialOrdering* po, size_t x,
     return po;
   }
 
-  static DHMap<std::tuple<const PartialOrdering*, size_t, size_t, PoComp>, const PartialOrdering*> cache;
-
   const PartialOrdering** ptr;
-  if (cache.getValuePtr(make_tuple(po, x, y, v), ptr, nullptr)) {
+  if (s_setCache.getValuePtr(make_tuple(po, x, y, v), ptr, nullptr)) {
     // TODO remove this reverse thing
     bool reversed = x > y;
     if (reversed) {
@@ -203,10 +209,8 @@ const PartialOrdering* PartialOrdering::set(const PartialOrdering* po, size_t x,
 
 const PartialOrdering* PartialOrdering::extend(const PartialOrdering* po)
 {
-  static DHMap<const PartialOrdering*, const PartialOrdering*> cache;
-
   const PartialOrdering** ptr;
-  if (cache.getValuePtr(po, ptr, nullptr)) {
+  if (s_extendCache.getValuePtr(po, ptr, nullptr)) {
     auto res = new PartialOrdering(*po);
     res->extend();
     *ptr = res;
@@ -606,6 +610,18 @@ ostream& operator<<(ostream& str, const PartialOrdering& po)
     str << std::setw(w) << i << " ";
   }
   return str;
+}
+
+void PartialOrdering::resetStaticCaches()
+{
+  // Note: we don't delete the cached PartialOrdering objects as they may
+  // still be referenced. They'll be garbage after reset anyway.
+  s_setCache.reset();
+  s_extendCache.reset();
+  if (s_emptyOrdering) {
+    delete s_emptyOrdering;
+    s_emptyOrdering = nullptr;
+  }
 }
 
 }

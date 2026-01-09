@@ -37,6 +37,12 @@ DHMap<TermList, unsigned> EqualityProxyMono::s_proxyPredicates;
 DHMap<unsigned, TermList> EqualityProxyMono::s_proxyPredicateSorts;
 DHMap<TermList, Unit*> EqualityProxyMono::s_proxyPremises;
 
+void EqualityProxyMono::resetStaticCaches() {
+  s_proxyPredicates.reset();
+  s_proxyPredicateSorts.reset();
+  s_proxyPremises.reset();
+}
+
 /**
  * Constructor, simply memorizes the value of the equality proxy option.
  */
