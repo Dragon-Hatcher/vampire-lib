@@ -214,6 +214,13 @@ add_library(common OBJECT ${SOURCES})
 # the actual Vampire executable
 add_executable(vampire vampire.cpp $<TARGET_OBJECTS:common>)
 
+# Library target for embedding Vampire
+add_library(vampire_lib STATIC
+    Api/VampireAPI.cpp
+    $<TARGET_OBJECTS:common>
+)
+target_include_directories(vampire_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+
 ################################################################
 # UNIT TESTING
 ################################################################
@@ -278,3 +285,19 @@ add_executable(subsat
     SATSubsumption/subsat/subsat_main.cpp
     $<TARGET_OBJECTS:common>
 )
+
+################################################################
+# API Example
+################################################################
+
+add_executable(api_example
+    EXCLUDE_FROM_ALL  # only build when explicitly requested
+    examples/api_example.cpp
+)
+target_link_libraries(api_example vampire_lib)
+
+add_executable(multi_proof_test
+    EXCLUDE_FROM_ALL  # only build when explicitly requested
+    examples/multi_proof_test.cpp
+)
+target_link_libraries(multi_proof_test vampire_lib)
