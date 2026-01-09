@@ -23,6 +23,7 @@
 #include <string>
 #include <initializer_list>
 #include <ostream>
+#include <vector>
 
 #include "Forwards.hpp"
 #include "Kernel/Term.hpp"
@@ -217,6 +218,68 @@ Unit* getRefutation();
  * @param refutation The refutation from getRefutation()
  */
 void printProof(std::ostream& out, Unit* refutation);
+
+// ===========================================
+// Structured Proof Access
+// ===========================================
+
+/**
+ * A single step in a proof.
+ */
+struct ProofStep {
+    unsigned id;                        // Unique identifier for this unit
+    InferenceRule rule;                 // Inference rule (enum)
+    UnitInputType inputType;            // Input type (enum)
+    std::vector<unsigned> premiseIds;   // IDs of premise units
+    Unit* unit;                         // The underlying Unit (Clause or Formula)
+
+    // Access the clause if this step is a clause (most steps are)
+    Clause* clause() const;
+
+    // Check if this is the empty clause (refutation)
+    bool isEmpty() const;
+
+    // Check if this is an input clause (no premises)
+    bool isInput() const { return premiseIds.empty(); }
+
+    // Get string representation of the rule
+    std::string ruleName() const;
+
+    // Get string representation of the input type
+    std::string inputTypeName() const;
+};
+
+/**
+ * Extract the proof as a sequence of steps.
+ * Steps are returned in topological order (premises before conclusions).
+ * The last step is the empty clause (refutation).
+ *
+ * @param refutation The refutation from getRefutation()
+ * @return Vector of proof steps, or empty if refutation is null
+ */
+std::vector<ProofStep> extractProof(Unit* refutation);
+
+/**
+ * Get the literals of a clause as a vector.
+ * @param c The clause
+ * @return Vector of literals in the clause
+ */
+std::vector<Literal*> getLiterals(Clause* c);
+
+/**
+ * Convert a term to a string representation.
+ */
+std::string termToString(TermList t);
+
+/**
+ * Convert a literal to a string representation.
+ */
+std::string literalToString(Literal* l);
+
+/**
+ * Convert a clause to a string representation.
+ */
+std::string clauseToString(Clause* c);
 
 } // namespace Api
 

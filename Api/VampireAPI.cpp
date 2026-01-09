@@ -17,6 +17,10 @@
 #include "Lib/Environment.hpp"
 #include "Lib/List.hpp"
 #include "Lib/Stack.hpp"
+#include "Lib/DHSet.hpp"
+
+#include <sstream>
+#include <algorithm>
 
 #include "Kernel/Term.hpp"
 #include "Kernel/Clause.hpp"
@@ -208,6 +212,122 @@ void printProof(std::ostream& out, Unit* refutation) {
     if (refutation) {
         InferenceStore::instance()->outputProof(out, refutation);
     }
+}
+
+// ===========================================
+// Structured Proof Access
+// ===========================================
+
+Clause* ProofStep::clause() const {
+    if (unit && unit->isClause()) {
+        return static_cast<Clause*>(unit);
+    }
+    return nullptr;
+}
+
+bool ProofStep::isEmpty() const {
+    Clause* c = clause();
+    return c && c->isEmpty();
+}
+
+std::string ProofStep::ruleName() const {
+    return Kernel::ruleName(rule);
+}
+
+std::string ProofStep::inputTypeName() const {
+    return Kernel::inputTypeName(inputType);
+}
+
+std::string termToString(TermList t) {
+    std::ostringstream oss;
+    oss << t;
+    return oss.str();
+}
+
+std::string literalToString(Literal* l) {
+    std::ostringstream oss;
+    oss << *l;
+    return oss.str();
+}
+
+std::string clauseToString(Clause* c) {
+    std::ostringstream oss;
+    if (c->isEmpty()) {
+        oss << "$false";
+    } else {
+        for (unsigned i = 0; i < c->length(); i++) {
+            if (i > 0) oss << " | ";
+            oss << *(*c)[i];
+        }
+    }
+    return oss.str();
+}
+
+std::vector<Literal*> getLiterals(Clause* c) {
+    std::vector<Literal*> result;
+    if (c) {
+        for (unsigned i = 0; i < c->length(); i++) {
+            result.push_back((*c)[i]);
+        }
+    }
+    return result;
+}
+
+std::vector<ProofStep> extractProof(Unit* refutation) {
+    std::vector<ProofStep> steps;
+    if (!refutation) {
+        return steps;
+    }
+
+    // Collect all units in the proof DAG using DFS
+    DHSet<unsigned> visited;
+    Stack<Unit*> toProcess;
+    std::vector<Unit*> unitsInOrder;
+
+    toProcess.push(refutation);
+
+    while (!toProcess.isEmpty()) {
+        Unit* current = toProcess.pop();
+
+        if (!visited.insert(current->number())) {
+            continue;  // Already visited
+        }
+
+        unitsInOrder.push_back(current);
+
+        // Add parents (premises) to the stack
+        Inference& inf = current->inference();
+        Inference::Iterator it = inf.iterator();
+        while (inf.hasNext(it)) {
+            Unit* parent = inf.next(it);
+            toProcess.push(parent);
+        }
+    }
+
+    // Reverse to get topological order (premises before conclusions)
+    std::reverse(unitsInOrder.begin(), unitsInOrder.end());
+
+    // Build ProofStep for each unit
+    for (Unit* u : unitsInOrder) {
+        ProofStep step;
+        step.id = u->number();
+        step.unit = u;
+
+        Inference& inf = u->inference();
+        step.rule = inf.rule();
+        step.inputType = inf.inputType();
+
+        // Collect premise IDs
+        Inference::Iterator it = inf.iterator();
+        while (inf.hasNext(it)) {
+            Unit* parent = inf.next(it);
+            step.premiseIds.push_back(parent->number());
+        }
+
+        steps.push_back(step);
+    }
+
+    return steps;
 }
 
 } // namespace Api

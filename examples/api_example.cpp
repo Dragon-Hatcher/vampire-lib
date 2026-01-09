@@ -54,11 +54,64 @@ int main() {
 
     // Output result
     switch (result) {
-        case ProofResult::PROOF:
+        case ProofResult::PROOF: {
             std::cout << "Theorem proved!" << std::endl;
-            std::cout << "\n--- Proof ---" << std::endl;
+
+            // --- Text proof output ---
+            std::cout << "\n--- Text Proof ---" << std::endl;
             printProof(std::cout, getRefutation());
+
+            // --- Structured proof output ---
+            std::cout << "\n--- Structured Proof ---" << std::endl;
+            std::vector<ProofStep> proof = extractProof(getRefutation());
+
+            for (const ProofStep& step : proof) {
+                std::cout << "Step " << step.id << ": ";
+                if (Clause* cl = step.clause()) {
+                    std::cout << clauseToString(cl);
+                }
+                std::cout << std::endl;
+
+                // Access rule as enum or string
+                std::cout << "  Rule: " << step.ruleName();
+                if (step.rule == InferenceRule::RESOLUTION) {
+                    std::cout << " (binary resolution)";
+                } else if (step.rule == InferenceRule::INPUT) {
+                    std::cout << " (input clause)";
+                }
+                std::cout << std::endl;
+
+                std::cout << "  Type: " << step.inputTypeName();
+                if (step.inputType == UnitInputType::NEGATED_CONJECTURE) {
+                    std::cout << " [GOAL]";
+                }
+                std::cout << std::endl;
+
+                if (!step.premiseIds.empty()) {
+                    std::cout << "  Premises: ";
+                    for (size_t i = 0; i < step.premiseIds.size(); i++) {
+                        if (i > 0) std::cout << ", ";
+                        std::cout << step.premiseIds[i];
+                    }
+                    std::cout << std::endl;
+                }
+
+                // Access individual literals if it's a clause
+                if (Clause* cl = step.clause()) {
+                    std::vector<Literal*> lits = getLiterals(cl);
+                    std::cout << "  Literals (" << lits.size() << "): ";
+                    for (size_t i = 0; i < lits.size(); i++) {
+                        if (i > 0) std::cout << ", ";
+                        std::cout << literalToString(lits[i]);
+                    }
+                    std::cout << std::endl;
+                }
+                std::cout << std::endl;
+            }
+
+            std::cout << "Total steps: " << proof.size() << std::endl;
             break;
+        }
         case ProofResult::SATISFIABLE:
             std::cout << "Not a theorem (satisfiable)" << std::endl;
             break;
