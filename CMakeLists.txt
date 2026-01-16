@@ -307,3 +307,15 @@ add_executable(benchmark
     examples/benchmark.cpp
 )
 target_link_libraries(benchmark vampire_lib)
+
+add_executable(formula_example
+    EXCLUDE_FROM_ALL  # only build when explicitly requested
+    examples/formula_example.cpp
+)
+target_link_libraries(formula_example vampire_lib)
+
+add_executable(transitivity_example
+    EXCLUDE_FROM_ALL  # only build when explicitly requested
+    examples/transitivity_example.cpp
+)
+target_link_libraries(transitivity_example vampire_lib)

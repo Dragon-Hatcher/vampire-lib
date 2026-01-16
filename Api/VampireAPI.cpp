@@ -24,6 +24,8 @@
 
 #include "Kernel/Term.hpp"
 #include "Kernel/Clause.hpp"
+#include "Kernel/Formula.hpp"
+#include "Kernel/FormulaUnit.hpp"
 #include "Kernel/Problem.hpp"
 #include "Kernel/Signature.hpp"
 #include "Kernel/Inference.hpp"
@@ -185,6 +187,64 @@ Literal* neg(Literal* l) {
 }
 
 // ===========================================
+// Formula Construction
+// ===========================================
+
+Formula* atom(Literal* l) {
+    return new AtomicFormula(l);
+}
+
+Formula* notF(Formula* f) {
+    return new NegatedFormula(f);
+}
+
+Formula* andF(std::initializer_list<Formula*> fs) {
+    FormulaList* args = nullptr;
+    for (Formula* f : fs) {
+        FormulaList::push(f, args);
+    }
+    return new JunctionFormula(AND, args);
+}
+
+Formula* orF(std::initializer_list<Formula*> fs) {
+    FormulaList* args = nullptr;
+    for (Formula* f : fs) {
+        FormulaList::push(f, args);
+    }
+    return new JunctionFormula(OR, args);
+}
+
+Formula* impF(Formula* lhs, Formula* rhs) {
+    return new BinaryFormula(IMP, lhs, rhs);
+}
+
+Formula* iffF(Formula* lhs, Formula* rhs) {
+    return new BinaryFormula(IFF, lhs, rhs);
+}
+
+Formula* forallF(unsigned varIndex, Formula* f) {
+    VList* vars = nullptr;
+    VList::push(varIndex, vars);
+    return new QuantifiedFormula(FORALL, vars, nullptr, f);
+}
+
+Formula* existsF(unsigned varIndex, Formula* f) {
+    VList* vars = nullptr;
+    VList::push(varIndex, vars);
+    return new QuantifiedFormula(EXISTS, vars, nullptr, f);
+}
+
+Unit* axiomF(Formula* f) {
+    return new FormulaUnit(f, FromInput(UnitInputType::AXIOM));
+}
+
+Unit* conjectureF(Formula* f) {
+    // For refutation-based proving, negate the conjecture
+    Formula* negated = new NegatedFormula(f);
+    return new FormulaUnit(negated, FromInput(UnitInputType::NEGATED_CONJECTURE));
+}
+
+// ===========================================
 // Clause Construction
 // ===========================================
 
@@ -211,6 +271,16 @@ Problem* problem(std::initializer_list<Clause*> clauses) {
         UnitList::push(c, units);
     }
     Problem* prb = new Problem(units);
+    env.setMainProblem(prb);
+    return prb;
+}
+
+Problem* problem(std::initializer_list<Unit*> units) {
+    UnitList* unitList = nullptr;
+    for (Unit* u : units) {
+        UnitList::push(u, unitList);
+    }
+    Problem* prb = new Problem(unitList);
     env.setMainProblem(prb);
     return prb;
 }

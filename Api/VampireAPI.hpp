@@ -28,6 +28,8 @@
 #include "Forwards.hpp"
 #include "Kernel/Term.hpp"
 #include "Kernel/Clause.hpp"
+#include "Kernel/Formula.hpp"
+#include "Kernel/FormulaUnit.hpp"
 #include "Kernel/Problem.hpp"
 #include "Kernel/Signature.hpp"
 #include "Kernel/Inference.hpp"
@@ -172,6 +174,85 @@ Literal* lit(unsigned pred, bool positive, std::initializer_list<TermList> args)
 Literal* neg(Literal* l);
 
 // ===========================================
+// Formula Construction (First-Order Logic)
+// ===========================================
+
+/**
+ * Create an atomic formula from a literal.
+ * @param l The literal
+ * @return Pointer to the formula
+ */
+Formula* atom(Literal* l);
+
+/**
+ * Create a negated formula (NOT f).
+ * @param f The formula to negate
+ * @return Pointer to the negated formula
+ */
+Formula* notF(Formula* f);
+
+/**
+ * Create a conjunction (f1 AND f2 AND ...).
+ * @param fs The formulas to conjoin
+ * @return Pointer to the conjunction
+ */
+Formula* andF(std::initializer_list<Formula*> fs);
+
+/**
+ * Create a disjunction (f1 OR f2 OR ...).
+ * @param fs The formulas to disjoin
+ * @return Pointer to the disjunction
+ */
+Formula* orF(std::initializer_list<Formula*> fs);
+
+/**
+ * Create an implication (f1 => f2).
+ * @param lhs The antecedent
+ * @param rhs The consequent
+ * @return Pointer to the implication
+ */
+Formula* impF(Formula* lhs, Formula* rhs);
+
+/**
+ * Create an equivalence (f1 <=> f2).
+ * @param lhs Left-hand side
+ * @param rhs Right-hand side
+ * @return Pointer to the equivalence
+ */
+Formula* iffF(Formula* lhs, Formula* rhs);
+
+/**
+ * Create a universally quantified formula (forall x. f).
+ * @param varIndex The variable index to bind
+ * @param f The body formula
+ * @return Pointer to the quantified formula
+ */
+Formula* forallF(unsigned varIndex, Formula* f);
+
+/**
+ * Create an existentially quantified formula (exists x. f).
+ * @param varIndex The variable index to bind
+ * @param f The body formula
+ * @return Pointer to the quantified formula
+ */
+Formula* existsF(unsigned varIndex, Formula* f);
+
+/**
+ * Create an axiom formula unit.
+ * @param f The formula
+ * @return Pointer to the formula unit (as Unit*)
+ */
+Unit* axiomF(Formula* f);
+
+/**
+ * Create a conjecture formula unit (to be proven).
+ * The formula is automatically negated for refutation-based proving.
+ * @param f The formula to prove
+ * @return Pointer to the formula unit (as Unit*)
+ */
+Unit* conjectureF(Formula* f);
+
+// ===========================================
 // Clause Construction
 // ===========================================
 
@@ -207,6 +288,14 @@ Clause* clause(std::initializer_list<Literal*> literals, UnitInputType inputType
  * @return Pointer to the problem
  */
 Problem* problem(std::initializer_list<Clause*> clauses);
+
+/**
+ * Create a problem from a list of units (clauses or formulas).
+ * Formulas will be clausified during preprocessing.
+ * @param units The units comprising the problem
+ * @return Pointer to the problem
+ */
+Problem* problem(std::initializer_list<Unit*> units);
 
 /**
  * Run the prover on a problem.
