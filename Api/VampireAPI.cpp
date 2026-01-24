@@ -171,6 +171,7 @@ TermList term(unsigned functor, std::initializer_list<TermList> args) {
 }
 
 TermList term(unsigned functor, const std::vector<TermList>& args) {
+    // Term::create expects (functor, arity, const TermList* args)
     return TermList(Term::create(functor, args.size(), args.data()));
 }
 
@@ -187,7 +188,9 @@ Literal* lit(unsigned pred, bool positive, std::initializer_list<TermList> args)
 }
 
 Literal* lit(unsigned pred, bool positive, const std::vector<TermList>& args) {
-    return Literal::create(pred, positive, args.size(), args.data());
+    // Literal::create expects (predicate, arity, polarity, TermList* args)
+    // Note: const_cast is safe here as Literal::create doesn't modify args
+    return Literal::create(pred, args.size(), positive, const_cast<TermList*>(args.data()));
 }
 
 Literal* neg(Literal* l) {
@@ -294,7 +297,8 @@ Clause* clause(std::initializer_list<Literal*> literals, UnitInputType inputType
 }
 
 Clause* clause(const std::vector<Literal*>& literals, UnitInputType inputType) {
-    return Clause::fromLiterals(literals.size(), literals.data(),
+    // Use fromArray instead of fromLiterals for vector input
+    return Clause::fromArray(literals.data(), literals.size(),
         NonspecificInference0(inputType, InferenceRule::INPUT));
 }
 
