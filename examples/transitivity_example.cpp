@@ -15,7 +15,6 @@ using namespace Api;
 using namespace Kernel;
 
 int main() {
-    init();
     options().setTimeLimitInSeconds(10);
 
     // Register symbols

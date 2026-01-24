@@ -26,9 +26,6 @@
 int main(void) {
     printf("=== Vampire C API Example ===\n\n");
 
-    // Initialize the library
-    vampire_init();
-
     // Configure options
     vampire_set_time_limit(10);  // 10 second timeout
     vampire_set_show_proof(true);

@@ -54,13 +54,6 @@ enum class ProofResult {
 };
 
 /**
- * Initialize the Vampire library.
- * The global environment is auto-constructed, but this ensures
- * proper initialization state.
- */
-void init();
-
-/**
  * Prepare for running another proof (light reset).
  * Call this between independent proving attempts to reset
  * the global ordering and other per-proof state.

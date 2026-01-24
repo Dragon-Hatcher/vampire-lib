@@ -38,7 +38,6 @@ int main(int argc, char** argv) {
         numProofs = std::atoi(argv[1]);
     }
 
-    init();
     options().setTimeLimitInSeconds(10);
 
     std::cout << "Running " << numProofs << " trivial proofs with full reset..." << std::endl;

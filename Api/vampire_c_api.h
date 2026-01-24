@@ -98,14 +98,8 @@ typedef struct {
 } vampire_proof_step_t;
 
 /* ===========================================
- * Library Initialization
+ * Library Initialization and Reset
  * =========================================== */
-
-/**
- * Initialize the Vampire library.
- * Call this before using any other API functions.
- */
-void vampire_init(void);
 
 /**
  * Prepare for running another proof (light reset).

@@ -136,7 +136,6 @@ bool runProof4() {
 }
 
 int main() {
-    init();
     options().setTimeLimitInSeconds(10);
 
     int passed = 0;

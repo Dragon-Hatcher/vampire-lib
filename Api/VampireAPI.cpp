@@ -57,15 +57,6 @@ using namespace Shell;
 using namespace Indexing;
 using namespace Saturation;
 
-static bool s_initialized = false;
-
-void init() {
-    if (s_initialized) return;
-    // The global env is auto-constructed before main().
-    // Just mark as initialized.
-    s_initialized = true;
-}
-
 void prepareForNextProof() {
     // Reset the global ordering so the next proof can set its own
     Ordering::unsetGlobalOrdering();
@@ -102,8 +93,6 @@ void reset() {
     // Reset the main problem reference
     // Note: We don't delete the old problem as it may still be referenced
     // by the user. The user is responsible for managing problem lifetime.
-
-    s_initialized = true;
 }
 
 Options& options() {

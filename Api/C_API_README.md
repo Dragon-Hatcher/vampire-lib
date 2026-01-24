@@ -22,8 +22,7 @@ This directory contains a plain C API for using Vampire as a library, suitable f
 #include "vampire_c_api.h"
 
 int main(void) {
-    // Initialize
-    vampire_init();
+    // Configure options
     vampire_set_time_limit(10);
 
     // Register symbols
@@ -94,17 +93,16 @@ from ctypes import *
 vampire = CDLL("libvampire.so")
 
 # Define function signatures
-vampire.vampire_init.argtypes = []
-vampire.vampire_init.restype = None
-
 vampire.vampire_add_function.argtypes = [c_char_p, c_uint]
 vampire.vampire_add_function.restype = c_uint
 
 vampire.vampire_constant.argtypes = [c_uint]
 vampire.vampire_constant.restype = c_void_p
 
+vampire.vampire_set_time_limit.argtypes = [c_int]
+vampire.vampire_set_time_limit.restype = None
+
 # Use the API
-vampire.vampire_init()
 vampire.vampire_set_time_limit(10)
 
 a = vampire.vampire_add_function(b"a", 0)
@@ -121,7 +119,6 @@ use std::os::raw::{c_char, c_uint, c_void};
 
 #[link(name = "vampire")]
 extern "C" {
-    fn vampire_init();
     fn vampire_add_function(name: *const c_char, arity: c_uint) -> c_uint;
     fn vampire_constant(functor: c_uint) -> *mut c_void;
     fn vampire_set_time_limit(seconds: i32);
@@ -129,7 +126,6 @@ extern "C" {
 
 fn main() {
     unsafe {
-        vampire_init();
         vampire_set_time_limit(10);
 
         let name = CString::new("a").unwrap();
@@ -152,7 +148,6 @@ import "C"
 import "unsafe"
 
 func main() {
-    C.vampire_init()
     C.vampire_set_time_limit(10)
 
     name := C.CString("a")
@@ -174,14 +169,12 @@ const ref = require('ref-napi');
 const voidPtr = ref.refType(ref.types.void);
 
 const vampire = ffi.Library('libvampire', {
-  'vampire_init': ['void', []],
   'vampire_set_time_limit': ['void', ['int']],
   'vampire_add_function': ['uint', ['string', 'uint']],
   'vampire_constant': [voidPtr, ['uint']],
   // ... other functions
 });
 
-vampire.vampire_init();
 vampire.vampire_set_time_limit(10);
 
 const a = vampire.vampire_add_function("a", 0);
@@ -192,10 +185,9 @@ const constA = vampire.vampire_constant(a);
 
 ## API Structure
 
-### Initialization
-- `vampire_init()` - Initialize library
-- `vampire_reset()` - Full reset (clears signature)
-- `vampire_prepare_for_next_proof()` - Light reset between proofs
+### Initialization and Reset
+- `vampire_reset()` - Full reset (clears signature and all state)
+- `vampire_prepare_for_next_proof()` - Light reset between proofs (clears ordering only)
 
 ### Symbol Registration
 - `vampire_add_function(name, arity)` - Register function symbol

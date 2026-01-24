@@ -40,12 +40,8 @@
 extern "C" {
 
 /* ===========================================
- * Library Initialization
+ * Library Initialization and Reset
  * =========================================== */
-
-void vampire_init(void) {
-    Api::init();
-}
 
 void vampire_prepare_for_next_proof(void) {
     Api::prepareForNextProof();

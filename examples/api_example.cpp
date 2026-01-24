@@ -20,9 +20,6 @@ using namespace Api;
 using namespace Kernel;
 
 int main() {
-    // Initialize the library
-    init();
-
     // Configure options (optional - uses defaults otherwise)
     options().setTimeLimitInSeconds(60);
 
