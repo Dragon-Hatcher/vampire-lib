@@ -217,6 +217,7 @@ add_executable(vampire vampire.cpp $<TARGET_OBJECTS:common>)
 # Library target for embedding Vampire
 add_library(vampire_lib STATIC
     Api/VampireAPI.cpp
+    Api/vampire_c_api.cpp
     $<TARGET_OBJECTS:common>
 )
 target_include_directories(vampire_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
@@ -319,3 +320,9 @@ add_executable(transitivity_example
     examples/transitivity_example.cpp
 )
 target_link_libraries(transitivity_example vampire_lib)
+
+add_executable(c_api_example
+    EXCLUDE_FROM_ALL  # only build when explicitly requested
+    examples/c_api_example.c
+)
+target_link_libraries(c_api_example vampire_lib)
