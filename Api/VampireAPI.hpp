@@ -144,6 +144,14 @@ TermList constant(unsigned functor);
  */
 TermList term(unsigned functor, std::initializer_list<TermList> args);
 
+/**
+ * Create a function application term (vector overload).
+ * @param functor Function symbol index from addFunction
+ * @param args Argument terms
+ * @return TermList representing the term
+ */
+TermList term(unsigned functor, const std::vector<TermList>& args);
+
 // ===========================================
 // Literal Construction
 // ===========================================
@@ -165,6 +173,15 @@ Literal* eq(bool positive, TermList lhs, TermList rhs);
  * @return Pointer to the literal
  */
 Literal* lit(unsigned pred, bool positive, std::initializer_list<TermList> args);
+
+/**
+ * Create a predicate literal (vector overload).
+ * @param pred Predicate symbol index from addPredicate
+ * @param positive true for positive literal, false for negated
+ * @param args Argument terms
+ * @return Pointer to the literal
+ */
+Literal* lit(unsigned pred, bool positive, const std::vector<TermList>& args);
 
 /**
  * Get the complementary (negated) literal.
@@ -199,11 +216,25 @@ Formula* notF(Formula* f);
 Formula* andF(std::initializer_list<Formula*> fs);
 
 /**
+ * Create a conjunction (vector overload).
+ * @param fs The formulas to conjoin
+ * @return Pointer to the conjunction
+ */
+Formula* andF(const std::vector<Formula*>& fs);
+
+/**
  * Create a disjunction (f1 OR f2 OR ...).
  * @param fs The formulas to disjoin
  * @return Pointer to the disjunction
  */
 Formula* orF(std::initializer_list<Formula*> fs);
+
+/**
+ * Create a disjunction (vector overload).
+ * @param fs The formulas to disjoin
+ * @return Pointer to the disjunction
+ */
+Formula* orF(const std::vector<Formula*>& fs);
 
 /**
  * Create an implication (f1 => f2).
@@ -264,11 +295,25 @@ Unit* conjectureF(Formula* f);
 Clause* axiom(std::initializer_list<Literal*> literals);
 
 /**
+ * Create an axiom clause (vector overload).
+ * @param literals The literals in the clause
+ * @return Pointer to the clause
+ */
+Clause* axiom(const std::vector<Literal*>& literals);
+
+/**
  * Create a conjecture clause (to be refuted).
  * @param literals The literals in the clause
  * @return Pointer to the clause
  */
 Clause* conjecture(std::initializer_list<Literal*> literals);
+
+/**
+ * Create a conjecture clause (vector overload).
+ * @param literals The literals in the clause
+ * @return Pointer to the clause
+ */
+Clause* conjecture(const std::vector<Literal*>& literals);
 
 /**
  * Create a clause with specified input type.
@@ -277,6 +322,14 @@ Clause* conjecture(std::initializer_list<Literal*> literals);
  * @return Pointer to the clause
  */
 Clause* clause(std::initializer_list<Literal*> literals, UnitInputType inputType);
+
+/**
+ * Create a clause with specified input type (vector overload).
+ * @param literals The literals in the clause
+ * @param inputType The type of input (AXIOM, CONJECTURE, etc.)
+ * @return Pointer to the clause
+ */
+Clause* clause(const std::vector<Literal*>& literals, UnitInputType inputType);
 
 // ===========================================
 // Problem and Proving
@@ -290,12 +343,27 @@ Clause* clause(std::initializer_list<Literal*> literals, UnitInputType inputType
 Problem* problem(std::initializer_list<Clause*> clauses);
 
 /**
+ * Create a problem from a list of clauses (vector overload).
+ * @param clauses The clauses comprising the problem
+ * @return Pointer to the problem
+ */
+Problem* problem(const std::vector<Clause*>& clauses);
+
+/**
  * Create a problem from a list of units (clauses or formulas).
  * Formulas will be clausified during preprocessing.
  * @param units The units comprising the problem
  * @return Pointer to the problem
  */
 Problem* problem(std::initializer_list<Unit*> units);
+
+/**
+ * Create a problem from a list of units (vector overload).
+ * Formulas will be clausified during preprocessing.
+ * @param units The units comprising the problem
+ * @return Pointer to the problem
+ */
+Problem* problem(const std::vector<Unit*>& units);
 
 /**
  * Run the prover on a problem.

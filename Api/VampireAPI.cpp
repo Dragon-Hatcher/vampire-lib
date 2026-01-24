@@ -170,6 +170,10 @@ TermList term(unsigned functor, std::initializer_list<TermList> args) {
     return TermList(Term::create(functor, args));
 }
 
+TermList term(unsigned functor, const std::vector<TermList>& args) {
+    return TermList(Term::create(functor, args.size(), args.data()));
+}
+
 // ===========================================
 // Literal Construction
 // ===========================================
@@ -180,6 +184,10 @@ Literal* eq(bool positive, TermList lhs, TermList rhs) {
 
 Literal* lit(unsigned pred, bool positive, std::initializer_list<TermList> args) {
     return Literal::create(pred, positive, args);
+}
+
+Literal* lit(unsigned pred, bool positive, const std::vector<TermList>& args) {
+    return Literal::create(pred, positive, args.size(), args.data());
 }
 
 Literal* neg(Literal* l) {
@@ -206,7 +214,23 @@ Formula* andF(std::initializer_list<Formula*> fs) {
     return new JunctionFormula(AND, args);
 }
 
+Formula* andF(const std::vector<Formula*>& fs) {
+    FormulaList* args = nullptr;
+    for (Formula* f : fs) {
+        FormulaList::push(f, args);
+    }
+    return new JunctionFormula(AND, args);
+}
+
 Formula* orF(std::initializer_list<Formula*> fs) {
+    FormulaList* args = nullptr;
+    for (Formula* f : fs) {
+        FormulaList::push(f, args);
+    }
+    return new JunctionFormula(OR, args);
+}
+
+Formula* orF(const std::vector<Formula*>& fs) {
     FormulaList* args = nullptr;
     for (Formula* f : fs) {
         FormulaList::push(f, args);
@@ -252,12 +276,25 @@ Clause* axiom(std::initializer_list<Literal*> literals) {
     return clause(literals, UnitInputType::AXIOM);
 }
 
+Clause* axiom(const std::vector<Literal*>& literals) {
+    return clause(literals, UnitInputType::AXIOM);
+}
+
 Clause* conjecture(std::initializer_list<Literal*> literals) {
+    return clause(literals, UnitInputType::NEGATED_CONJECTURE);
+}
+
+Clause* conjecture(const std::vector<Literal*>& literals) {
     return clause(literals, UnitInputType::NEGATED_CONJECTURE);
 }
 
 Clause* clause(std::initializer_list<Literal*> literals, UnitInputType inputType) {
     return Clause::fromLiterals(literals,
+        NonspecificInference0(inputType, InferenceRule::INPUT));
+}
+
+Clause* clause(const std::vector<Literal*>& literals, UnitInputType inputType) {
+    return Clause::fromLiterals(literals.size(), literals.data(),
         NonspecificInference0(inputType, InferenceRule::INPUT));
 }
 
@@ -275,7 +312,27 @@ Problem* problem(std::initializer_list<Clause*> clauses) {
     return prb;
 }
 
+Problem* problem(const std::vector<Clause*>& clauses) {
+    UnitList* units = nullptr;
+    for (Clause* c : clauses) {
+        UnitList::push(c, units);
+    }
+    Problem* prb = new Problem(units);
+    env.setMainProblem(prb);
+    return prb;
+}
+
 Problem* problem(std::initializer_list<Unit*> units) {
+    UnitList* unitList = nullptr;
+    for (Unit* u : units) {
+        UnitList::push(u, unitList);
+    }
+    Problem* prb = new Problem(unitList);
+    env.setMainProblem(prb);
+    return prb;
+}
+
+Problem* problem(const std::vector<Unit*>& units) {
     UnitList* unitList = nullptr;
     for (Unit* u : units) {
         UnitList::push(u, unitList);
