@@ -41,6 +41,8 @@
 
 #include "Saturation/ProvingHelper.hpp"
 
+#include "Lib/Timer.hpp"
+
 #include "Kernel/MainLoop.hpp"
 #include "Kernel/Ordering.hpp"
 #include "Kernel/PartialOrdering.hpp"
@@ -60,6 +62,11 @@ using namespace Saturation;
 void prepareForNextProof() {
     // Reset the global ordering so the next proof can set its own
     Ordering::unsetGlobalOrdering();
+
+    // Reset EXIT_LOCK to allow proofs on different threads.
+    // disableLimitEnforcement() locks EXIT_LOCK without unlocking,
+    // which prevents subsequent proofs on different threads from completing
+    Lib::Timer::resetLimitEnforcement();
 }
 
 void reset() {

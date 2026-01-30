@@ -195,6 +195,12 @@ void disableLimitEnforcement() {
   EXIT_LOCK.lock();
 }
 
+void resetLimitEnforcement() {
+  // Reset EXIT_LOCK for API usage - allows multiple proofs on different threads
+  // Uses placement-new to reconstruct the mutex, same technique as reinitialise()
+  ::new (&EXIT_LOCK) std::recursive_mutex;
+}
+
 // return elapsed time after `START_TIME`
 // must be thread-safe as it is called by the main process and timer_thread
 long elapsedMilliseconds() {

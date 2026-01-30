@@ -33,6 +33,10 @@ namespace Timer {
   // blocks if a resource limit was already reached and we are exiting
   void disableLimitEnforcement();
 
+  // reset EXIT_LOCK for API usage (allows multiple proofs on different threads)
+  // must be called between independent proofs when using Vampire as a library
+  void resetLimitEnforcement();
+
   // elapsed time
   long elapsedMilliseconds();
   inline long elapsedDeciseconds()
