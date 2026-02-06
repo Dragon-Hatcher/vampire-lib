@@ -444,49 +444,60 @@ bool vampire_clause_is_empty(vampire_clause_t* clause) {
  * String Conversions
  * =========================================== */
 
-int vampire_term_to_string(vampire_term_t* term, char* buffer, size_t buffer_size) {
-    if (!term || !buffer || buffer_size == 0) {
-        return -1;
+char* vampire_term_to_string(vampire_term_t* term) {
+    if (!term) {
+        return nullptr;
     }
 
     std::string str = Api::termToString(TO_TERM(term));
-    if (str.length() + 1 > buffer_size) {
-        return -1;
+    char* result = static_cast<char*>(malloc(str.length() + 1));
+    if (result) {
+        std::strcpy(result, str.c_str());
     }
-
-    std::strncpy(buffer, str.c_str(), buffer_size - 1);
-    buffer[buffer_size - 1] = '\0';
-    return str.length();
+    return result;
 }
 
-int vampire_literal_to_string(vampire_literal_t* literal, char* buffer, size_t buffer_size) {
-    if (!literal || !buffer || buffer_size == 0) {
-        return -1;
+char* vampire_literal_to_string(vampire_literal_t* literal) {
+    if (!literal) {
+        return nullptr;
     }
 
     std::string str = Api::literalToString(TO_LITERAL(literal));
-    if (str.length() + 1 > buffer_size) {
-        return -1;
+    char* result = static_cast<char*>(malloc(str.length() + 1));
+    if (result) {
+        std::strcpy(result, str.c_str());
     }
-
-    std::strncpy(buffer, str.c_str(), buffer_size - 1);
-    buffer[buffer_size - 1] = '\0';
-    return str.length();
+    return result;
 }
 
-int vampire_clause_to_string(vampire_clause_t* clause, char* buffer, size_t buffer_size) {
-    if (!clause || !buffer || buffer_size == 0) {
-        return -1;
+char* vampire_clause_to_string(vampire_clause_t* clause) {
+    if (!clause) {
+        return nullptr;
     }
 
     std::string str = Api::clauseToString(TO_CLAUSE(clause));
-    if (str.length() + 1 > buffer_size) {
-        return -1;
+    char* result = static_cast<char*>(malloc(str.length() + 1));
+    if (result) {
+        std::strcpy(result, str.c_str());
+    }
+    return result;
+}
+
+char* vampire_formula_to_string(vampire_formula_t* formula) {
+    if (!formula) {
+        return nullptr;
     }
 
-    std::strncpy(buffer, str.c_str(), buffer_size - 1);
-    buffer[buffer_size - 1] = '\0';
-    return str.length();
+    std::string str = Api::formulaToString(TO_FORMULA(formula));
+    char* result = static_cast<char*>(malloc(str.length() + 1));
+    if (result) {
+        std::strcpy(result, str.c_str());
+    }
+    return result;
+}
+
+void vampire_free_string(char* str) {
+    free(str);
 }
 
 const char* vampire_rule_name(vampire_inference_rule_t rule) {

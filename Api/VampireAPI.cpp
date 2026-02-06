@@ -430,6 +430,12 @@ std::string clauseToString(Clause* c) {
     return oss.str();
 }
 
+std::string formulaToString(Formula* f) {
+    std::ostringstream oss;
+    oss << *f;
+    return oss.str();
+}
+
 std::vector<Literal*> getLiterals(Clause* c) {
     std::vector<Literal*> result;
     if (c) {

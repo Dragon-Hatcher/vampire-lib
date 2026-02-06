@@ -453,32 +453,36 @@ bool vampire_clause_is_empty(vampire_clause_t* clause);
 /**
  * Convert a term to a string representation.
  * @param term The term
- * @param buffer Output buffer (must be allocated by caller)
- * @param buffer_size Size of the buffer
- * @return Number of characters written (excluding null terminator),
- *         or -1 if buffer too small
+ * @return Allocated string (must be freed with vampire_free_string), or NULL on error
  */
-int vampire_term_to_string(vampire_term_t* term, char* buffer, size_t buffer_size);
+char* vampire_term_to_string(vampire_term_t* term);
 
 /**
  * Convert a literal to a string representation.
  * @param literal The literal
- * @param buffer Output buffer (must be allocated by caller)
- * @param buffer_size Size of the buffer
- * @return Number of characters written (excluding null terminator),
- *         or -1 if buffer too small
+ * @return Allocated string (must be freed with vampire_free_string), or NULL on error
  */
-int vampire_literal_to_string(vampire_literal_t* literal, char* buffer, size_t buffer_size);
+char* vampire_literal_to_string(vampire_literal_t* literal);
 
 /**
  * Convert a clause to a string representation.
  * @param clause The clause
- * @param buffer Output buffer (must be allocated by caller)
- * @param buffer_size Size of the buffer
- * @return Number of characters written (excluding null terminator),
- *         or -1 if buffer too small
+ * @return Allocated string (must be freed with vampire_free_string), or NULL on error
  */
-int vampire_clause_to_string(vampire_clause_t* clause, char* buffer, size_t buffer_size);
+char* vampire_clause_to_string(vampire_clause_t* clause);
+
+/**
+ * Convert a formula to a string representation.
+ * @param formula The formula
+ * @return Allocated string (must be freed with vampire_free_string), or NULL on error
+ */
+char* vampire_formula_to_string(vampire_formula_t* formula);
+
+/**
+ * Free a string allocated by vampire_*_to_string functions.
+ * @param str The string to free
+ */
+void vampire_free_string(char* str);
 
 /**
  * Get the name of an inference rule.

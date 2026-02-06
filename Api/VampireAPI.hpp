@@ -441,6 +441,11 @@ std::string literalToString(Literal* l);
  */
 std::string clauseToString(Clause* c);
 
+/**
+ * Convert a formula to a string representation.
+ */
+std::string formulaToString(Formula* f);
+
 } // namespace Api
 
 #endif // __VampireAPI__
