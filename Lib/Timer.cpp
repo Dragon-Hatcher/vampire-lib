@@ -62,6 +62,9 @@ static std::recursive_mutex EXIT_LOCK;
 
 // called by timer_thread to exit the entire process
 // functions called here should be thread-safe
+// Flag to indicate library mode - when true, limitReached won't call exit()
+static bool LIBRARY_MODE = false;
+
 [[noreturn]] static void limitReached(LimitType whichLimit)
 {
   using namespace Shell;
@@ -121,6 +124,11 @@ static std::chrono::time_point<std::chrono::steady_clock> START_TIME;
   unsigned limit = env.options->timeLimitInDeciseconds();
   while(true) {
     if(limit && Timer::elapsedDeciseconds() >= limit) {
+      // In library mode, set termination reason and exit thread cleanly
+      if (LIBRARY_MODE) {
+        env.statistics->terminationReason = Shell::TerminationReason::TIME_LIMIT;
+        pthread_exit(nullptr);  // Clean thread exit
+      }
       limitReached(TIME_LIMIT);
     }
 
@@ -128,6 +136,11 @@ static std::chrono::time_point<std::chrono::steady_clock> START_TIME;
     if(env.options->instructionLimit() || env.options->simulatedInstructionLimit()) {
       Timer::updateInstructionCount();
       if (env.options->instructionLimit() && LAST_INSTRUCTION_COUNT_READ >= MEGA*(long long)env.options->instructionLimit()) {
+        // In library mode, set termination reason and exit thread cleanly
+        if (LIBRARY_MODE) {
+          env.statistics->terminationReason = Shell::TerminationReason::INSTRUCTION_LIMIT;
+          pthread_exit(nullptr);  // Clean thread exit
+        }
         limitReached(INSTRUCTION_LIMIT);
       }
     }
@@ -148,6 +161,9 @@ void reinitialise(bool tryInitInstructionLimiting) {
   // I am not sure of the semantics of placement-new for std::recursive_mutex,
   // but nobody else seems to be either - if you know, tell me! - Michael
   ::new (&EXIT_LOCK) std::recursive_mutex;
+
+  // Enable library mode - prevents timer thread from calling exit()
+  LIBRARY_MODE = true;
 
   START_TIME = std::chrono::steady_clock::now();
 

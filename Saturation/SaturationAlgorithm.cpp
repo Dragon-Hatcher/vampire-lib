@@ -1333,6 +1333,14 @@ MainLoopResult SaturationAlgorithm::runImpl()
       }
       if(_softTimeLimit && Timer::elapsedDeciseconds() - startTime > _softTimeLimit)
         throw TimeLimitExceededException();
+
+      // Check if timer thread has set termination reason (library mode)
+      if (env.statistics->terminationReason == Shell::TerminationReason::TIME_LIMIT) {
+        throw TimeLimitExceededException();
+      }
+      if (env.statistics->terminationReason == Shell::TerminationReason::INSTRUCTION_LIMIT) {
+        throw ActivationLimitExceededException();
+      }
     }
   }
   catch (ThrowableBase&) {
@@ -1698,6 +1706,13 @@ SaturationAlgorithm *SaturationAlgorithm::createFromOptions(Problem& prb, const 
   res->_answerLiteralManager = AnswerLiteralManager::getInstance(); // selects the right one, according to options!
   ASS(!res->_answerLiteralManager||opt.questionAnswering()!=Options::QuestionAnsweringMode::OFF);
   ASS( res->_answerLiteralManager||opt.questionAnswering()==Options::QuestionAnsweringMode::OFF);
+
+  // Set soft time limit for graceful timeout handling via exceptions
+  // This allows the main loop to exit cleanly instead of the timer thread calling exit()
+  if (opt.timeLimitInDeciseconds() > 0) {
+    res->setSoftTimeLimit(opt.timeLimitInDeciseconds());
+  }
+
   return res;
 } // SaturationAlgorithm::createFromOptions
 

@@ -60,6 +60,13 @@ using namespace Indexing;
 using namespace Saturation;
 
 void prepareForNextProof() {
+    // Initialize the timer thread on first call (needed for timeout support)
+    static bool timer_initialized = false;
+    if (!timer_initialized) {
+        Lib::Timer::reinitialise();
+        timer_initialized = true;
+    }
+
     // Reset the global ordering so the next proof can set its own
     Ordering::unsetGlobalOrdering();
 
@@ -70,6 +77,9 @@ void prepareForNextProof() {
 }
 
 void reset() {
+    // Reinitialize the timer (needed for timeout support after reset)
+    Lib::Timer::reinitialise();
+
     // Reset the global ordering
     Ordering::unsetGlobalOrdering();
 
