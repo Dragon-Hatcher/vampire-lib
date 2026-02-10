@@ -121,27 +121,29 @@ static std::chrono::time_point<std::chrono::steady_clock> START_TIME;
 // then, we could simply sleep until the time limit
 [[noreturn]] void timer_thread()
 {
-  unsigned limit = env.options->timeLimitInDeciseconds();
   while(true) {
-    if(limit && Timer::elapsedDeciseconds() >= limit) {
-      // In library mode, set termination reason and exit thread cleanly
+    // Re-read the limit on each iteration so that changes made after
+    // the thread was spawned are picked up
+    unsigned limit = env.options->timeLimitInMilliseconds();
+    if(limit && Timer::elapsedMilliseconds() >= limit) {
+      // In library mode, set termination reason and keep looping
+      // (the main loop will detect this and throw an exception)
       if (LIBRARY_MODE) {
         env.statistics->terminationReason = Shell::TerminationReason::TIME_LIMIT;
-        pthread_exit(nullptr);  // Clean thread exit
+      } else {
+        limitReached(TIME_LIMIT);
       }
-      limitReached(TIME_LIMIT);
     }
 
 #if VAMPIRE_PERF_EXISTS
     if(env.options->instructionLimit() || env.options->simulatedInstructionLimit()) {
       Timer::updateInstructionCount();
       if (env.options->instructionLimit() && LAST_INSTRUCTION_COUNT_READ >= MEGA*(long long)env.options->instructionLimit()) {
-        // In library mode, set termination reason and exit thread cleanly
         if (LIBRARY_MODE) {
           env.statistics->terminationReason = Shell::TerminationReason::INSTRUCTION_LIMIT;
-          pthread_exit(nullptr);  // Clean thread exit
+        } else {
+          limitReached(INSTRUCTION_LIMIT);
         }
-        limitReached(INSTRUCTION_LIMIT);
       }
     }
 #endif
@@ -215,6 +217,10 @@ void resetLimitEnforcement() {
   // Reset EXIT_LOCK for API usage - allows multiple proofs on different threads
   // Uses placement-new to reconstruct the mutex, same technique as reinitialise()
   ::new (&EXIT_LOCK) std::recursive_mutex;
+}
+
+void resetStartTime() {
+  START_TIME = std::chrono::steady_clock::now();
 }
 
 // return elapsed time after `START_TIME`

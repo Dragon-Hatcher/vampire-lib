@@ -552,11 +552,11 @@ void Splitter::init(SaturationAlgorithm* sa)
 #endif
 
   if (opts.splittingAvatimer() < 1.0) {
-    unsigned timeLimit = opts.simulatedTimeLimit(); // is also stored in deciseconds
+    unsigned timeLimit = opts.simulatedTimeLimitInMilliseconds();
     if (timeLimit == 0) {
-      timeLimit = opts.timeLimitInDeciseconds();
+      timeLimit = opts.timeLimitInMilliseconds();
     }
-    _stopSplittingAtTime = opts.splittingAvatimer() * timeLimit * 100;
+    _stopSplittingAtTime = opts.splittingAvatimer() * timeLimit;
 #if VAMPIRE_PERF_EXISTS
     unsigned instrLimit = opts.simulatedInstructionLimit();
     if (instrLimit == 0) {

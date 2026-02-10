@@ -37,6 +37,9 @@ namespace Timer {
   // must be called between independent proofs when using Vampire as a library
   void resetLimitEnforcement();
 
+  // reset the start time so elapsed time is measured from now
+  void resetStartTime();
+
   // elapsed time
   long elapsedMilliseconds();
   inline long elapsedDeciseconds()

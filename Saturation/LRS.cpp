@@ -91,7 +91,7 @@ long long LRS::estimatedReachableCount()
   // time spent in saturation (parsing, preprocessing, and the initial loading up of the input into passive are excluded)
   long timeSpent=currTime-_lrsStartTime; // (in milliseconds)
 
-  int opt_timeLimitDeci = _opt.timeLimitInDeciseconds();
+  int opt_timeLimitMs = _opt.timeLimitInMilliseconds();
   float correction_coef = _opt.lrsEstimateCorrectionCoef();
   int firstCheck=_opt.lrsFirstTimeCheck(); // (in percent)!
 
@@ -107,8 +107,7 @@ long long LRS::estimatedReachableCount()
 
   long long result = -1;
 
-  if ((opt_timeLimitDeci > 0 && currTime < firstCheck*opt_timeLimitDeci) ||
-      // the above, unit-wise: cf milliseconds on the left, and deci * percent on the right
+  if ((opt_timeLimitMs > 0 && currTime * 100 < firstCheck * (long long)opt_timeLimitMs) ||
       (opt_instruction_limit > 0 && currInstructions*100 < firstCheck*opt_instruction_limit)
   ) {
     goto finish;
@@ -118,10 +117,10 @@ long long LRS::estimatedReachableCount()
     long long processed=env.statistics->activations;
 
     long long timeLeft; // (in milliseconds)
-    if(_opt.simulatedTimeLimit()) {
-      timeLeft=_opt.simulatedTimeLimit()*100 - currTime;
+    if(_opt.simulatedTimeLimitInMilliseconds()) {
+      timeLeft=_opt.simulatedTimeLimitInMilliseconds() - currTime;
     } else {
-      timeLeft=opt_timeLimitDeci*100 - currTime;
+      timeLeft=opt_timeLimitMs - currTime;
     }
 
     long int instrsLeft = opt_instruction_limit - instrsBurned;

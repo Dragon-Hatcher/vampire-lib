@@ -140,10 +140,10 @@ public:
   Splitter* getSplitter() { return _splitter; }
   FunctionDefinitionHandler& getFunctionDefinitionHandler() const { return _fnDefHandler; }
 
-  // set a "soft" time limit to be checked periodically
+  // set a "soft" time limit (in milliseconds) to be checked periodically
   // separate to, and not as carefully checked as, Lib::Timer
   // used by FMB's FunctionRelationshipInference
-  void setSoftTimeLimit(unsigned deciseconds) { _softTimeLimit = deciseconds; }
+  void setSoftTimeLimit(unsigned milliseconds) { _softTimeLimit = milliseconds; }
 
 protected:
   void init() override;
@@ -256,7 +256,7 @@ private:
   static std::pair<CompositeISE*, CompositeISEMany> createISE(Problem& prb, const Options& opt, Ordering& ordering,
      bool alascaTakesOver);
 
-  // a "soft" time limit in deciseconds, checked manually: 0 is no limit
+  // a "soft" time limit in milliseconds, checked manually: 0 is no limit
   unsigned _softTimeLimit = 0;
 };
 

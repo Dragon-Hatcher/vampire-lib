@@ -67,6 +67,13 @@ void prepareForNextProof() {
         timer_initialized = true;
     }
 
+    // Reset elapsed time so the timer thread measures from now
+    Lib::Timer::resetStartTime();
+
+    // Clear any termination reason from a previous proof so the timer thread
+    // and saturation loop don't immediately trigger
+    env.statistics->terminationReason = Shell::TerminationReason::UNKNOWN;
+
     // Reset the global ordering so the next proof can set its own
     Ordering::unsetGlobalOrdering();
 

@@ -393,9 +393,9 @@ void Options::init()
     _lookup.insert(&_thanks);
     _thanks.setExperimental();
 
-    _timeLimitInDeciseconds = TimeLimitOptionValue("time_limit","t",600); // stores deciseconds, but reads seconds from the user by default
-    _timeLimitInDeciseconds.description="Time limit in wall clock seconds, you can use d,s,m,h,D suffixes also i.e. 60s, 5m. Setting it to 0 effectively gives no time limit.";
-    _lookup.insert(&_timeLimitInDeciseconds);
+    _timeLimitInMilliseconds = TimeLimitOptionValue("time_limit","t",60000); // stores milliseconds, reads seconds from user by default
+    _timeLimitInMilliseconds.description="Time limit in wall clock seconds, you can use d,s,m,h,D suffixes also i.e. 60s, 5m. Setting it to 0 effectively gives no time limit.";
+    _lookup.insert(&_timeLimitInMilliseconds);
 
 #if VTIME_PROFILING
     _timeStatistics = BoolOptionValue("time_statistics","tstat",false);
@@ -2852,26 +2852,26 @@ bool Options::TimeLimitOptionValue::setValue(const std::string& value)
     end++;
   }
   end--;
-  float multiplier = 10.0; // by default assume seconds
+  float multiplier = 1000.0; // by default assume seconds, store in milliseconds
   switch (*end) {
-  case 'd': // deciseconds
-      multiplier = 1.0;
+  case 'd': // deciseconds -> milliseconds
+      multiplier = 100.0;
       *end = 0;
       break;
-  case 's': // seconds
-    multiplier = 10.0;
+  case 's': // seconds -> milliseconds
+    multiplier = 1000.0;
     *end = 0;
     break;
-  case 'm': // minutes
-    multiplier = 600.0;
+  case 'm': // minutes -> milliseconds
+    multiplier = 60000.0;
     *end = 0;
     break;
-  case 'h': // minutes
-    multiplier = 36000.0;
+  case 'h': // hours -> milliseconds
+    multiplier = 3600000.0;
     *end = 0;
     break;
-  case 'D': // days
-    multiplier = 864000.0;
+  case 'D': // days -> milliseconds
+    multiplier = 86400000.0;
     *end = 0;
     break;
   default:
@@ -3274,9 +3274,9 @@ void Options::readFromEncodedOptions (std::string testId)
     goto error;
   }
   std::string timeString = testId.substr(index+1);
-  _timeLimitInDeciseconds.set(timeString);
-  // setting assumes seconds as default, but encoded strings use deciseconds
-  _timeLimitInDeciseconds.actualValue = _timeLimitInDeciseconds.actualValue/10;
+  _timeLimitInMilliseconds.set(timeString);
+  // set() assumes seconds (multiplies by 1000), but encoded strings are raw ms values
+  _timeLimitInMilliseconds.actualValue = _timeLimitInMilliseconds.actualValue/1000;
 
   testId = testId.substr(3,index-3);
   switch (testId[0]) {
@@ -3355,7 +3355,7 @@ std::string Options::generateEncodedOptions() const
     forbidden.insert(&_saturationAlgorithm);
     forbidden.insert(&_selection);
     forbidden.insert(&_ageWeightRatio);
-    forbidden.insert(&_timeLimitInDeciseconds);
+    forbidden.insert(&_timeLimitInMilliseconds);
 
     //things we don't want to output (showHelp etc won't get to here anyway)
     forbidden.insert(&_mode);
@@ -3400,7 +3400,7 @@ std::string Options::generateEncodedOptions() const
   }
 
   if(!first){ res << "_"; }
-  res << Lib::Int::toString(_timeLimitInDeciseconds.actualValue);
+  res << Lib::Int::toString(_timeLimitInMilliseconds.actualValue);
 
   return res.str();
 }

@@ -1321,8 +1321,7 @@ void SaturationAlgorithm::doOneAlgorithmStep()
  */
 MainLoopResult SaturationAlgorithm::runImpl()
 {
-  // could be more precise, but we don't care too much
-  unsigned startTime = Timer::elapsedDeciseconds();
+  unsigned startTime = Timer::elapsedMilliseconds();
   try {
     env.statistics->activations = 0;
     while (true) {
@@ -1331,7 +1330,7 @@ MainLoopResult SaturationAlgorithm::runImpl()
       if (_activationLimit && env.statistics->activations > _activationLimit) {
         throw ActivationLimitExceededException();
       }
-      if(_softTimeLimit && Timer::elapsedDeciseconds() - startTime > _softTimeLimit)
+      if(_softTimeLimit && Timer::elapsedMilliseconds() - startTime > _softTimeLimit)
         throw TimeLimitExceededException();
 
       // Check if timer thread has set termination reason (library mode)
@@ -1709,8 +1708,8 @@ SaturationAlgorithm *SaturationAlgorithm::createFromOptions(Problem& prb, const 
 
   // Set soft time limit for graceful timeout handling via exceptions
   // This allows the main loop to exit cleanly instead of the timer thread calling exit()
-  if (opt.timeLimitInDeciseconds() > 0) {
-    res->setSoftTimeLimit(opt.timeLimitInDeciseconds());
+  if (opt.timeLimitInMilliseconds() > 0) {
+    res->setSoftTimeLimit(opt.timeLimitInMilliseconds());
   }
 
   return res;

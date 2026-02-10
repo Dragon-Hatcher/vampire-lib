@@ -63,6 +63,10 @@ void vampire_set_time_limit_deciseconds(int deciseconds) {
     Api::options().setTimeLimitInDeciseconds(deciseconds);
 }
 
+void vampire_set_time_limit_milliseconds(int milliseconds) {
+    Api::options().setTimeLimitInMilliseconds(milliseconds);
+}
+
 void vampire_set_show_proof(bool show) {
     if (show) {
         Api::options().setProof(Shell::Options::Proof::ON);

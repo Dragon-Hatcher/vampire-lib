@@ -1283,7 +1283,7 @@ Options* parent;
 
 };
 /**
-* Need to read the time limit. By default it assumes seconds (and stores deciseconds) but you can give
+* Need to read the time limit. By default it assumes seconds (and stores milliseconds) but you can give
 * a multiplier i.e. d,s,m,h,D for deciseconds,seconds,minutes,hours,Days
 * @author Giles
 */
@@ -1296,9 +1296,9 @@ bool setValue(const std::string& value) override;
 
 void output(std::ostream& out,bool linewrap) const override {
     AbstractOptionValue::output(out,linewrap);
-    out << "\tdefault: " << defaultValue << "d" << std::endl;
+    out << "\tdefault: " << defaultValue/1000 << "s" << std::endl;
 }
-std::string getStringOfValue(int value) const override{ return Lib::Int::toString(value)+"d"; }
+std::string getStringOfValue(int value) const override{ return Lib::Int::toString(value/1000)+"s"; }
 };
 
 /**
@@ -2103,8 +2103,8 @@ public:
   int lrsRetroactiveDeletes() const { return _lrsRetroactiveDeletes.actualValue; }
   int lrsPreemptiveDeletes() const { return _lrsPreemptiveDeletes.actualValue; }
   int lookaheadDelay() const { return _lookaheadDelay.actualValue; }
-  int simulatedTimeLimit() const { return _simulatedTimeLimit.actualValue; }
-  void setSimulatedTimeLimit(int newVal) { _simulatedTimeLimit.actualValue = newVal; }
+  // setSimulatedTimeLimit takes deciseconds (compatibility) and stores as ms
+  void setSimulatedTimeLimit(int newVal) { _simulatedTimeLimit.actualValue = 100 * newVal; }
   float lrsEstimateCorrectionCoef() const { return _lrsEstimateCorrectionCoef.actualValue; }
   TermOrdering termOrdering() const { return _termOrdering.actualValue; }
   SymbolPrecedence symbolPrecedence() const { return _symbolPrecedence.actualValue; }
@@ -2118,8 +2118,14 @@ public:
   const std::string& functionPrecedence() const { return _functionPrecedence.actualValue; }
   const std::string& typeConPrecedence() const { return _typeConPrecedence.actualValue; }
   const std::string& predicatePrecedence() const { return _predicatePrecedence.actualValue; }
-  // Return time limit in deciseconds, or 0 if there is no time limit
-  int timeLimitInDeciseconds() const { return _timeLimitInDeciseconds.actualValue; }
+  // Return time limit in milliseconds, or 0 if there is no time limit
+  int timeLimitInMilliseconds() const { return _timeLimitInMilliseconds.actualValue; }
+  // Compatibility wrapper returning deciseconds (= ms / 100)
+  int timeLimitInDeciseconds() const { return _timeLimitInMilliseconds.actualValue / 100; }
+  // Return simulated time limit in milliseconds (for LRS reachability estimation)
+  int simulatedTimeLimitInMilliseconds() const { return _simulatedTimeLimit.actualValue; }
+  // Compatibility wrapper returning deciseconds
+  int simulatedTimeLimit() const { return _simulatedTimeLimit.actualValue / 100; }
   size_t memoryLimit() const { return _memoryLimit.actualValue; }
   void setMemoryLimitOptionValue(size_t newVal) { _memoryLimit.actualValue = newVal; }
 #if VAMPIRE_PERF_EXISTS
@@ -2251,8 +2257,9 @@ public:
   bool nonUnitInduction() const { return _nonUnitInduction.actualValue; }
   bool inductionOnActiveOccurrences() const { return _inductionOnActiveOccurrences.actualValue; }
 
-  void setTimeLimitInSeconds(int newVal) { _timeLimitInDeciseconds.actualValue = 10*newVal; }
-  void setTimeLimitInDeciseconds(int newVal) { _timeLimitInDeciseconds.actualValue = newVal; }
+  void setTimeLimitInSeconds(int newVal) { _timeLimitInMilliseconds.actualValue = 1000*newVal; }
+  void setTimeLimitInDeciseconds(int newVal) { _timeLimitInMilliseconds.actualValue = 100*newVal; }
+  void setTimeLimitInMilliseconds(int newVal) { _timeLimitInMilliseconds.actualValue = newVal; }
 
   bool splitAtActivation() const{ return _splitAtActivation.actualValue; }
   bool cleaveNonsplittables() const{ return _cleaveNonsplittables.actualValue; }
@@ -2670,8 +2677,8 @@ private:
   BoolOptionValue _theoryFlattening;
   BoolOptionValue _ignoreUnrecognizedLogic;
 
-  /** Time limit in deciseconds */
-  TimeLimitOptionValue _timeLimitInDeciseconds;
+  /** Time limit in milliseconds */
+  TimeLimitOptionValue _timeLimitInMilliseconds;
 #if VTIME_PROFILING
   BoolOptionValue _timeStatistics;
   StringOptionValue _timeStatisticsFocus;

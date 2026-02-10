@@ -138,6 +138,11 @@ void vampire_set_time_limit(int seconds);
 void vampire_set_time_limit_deciseconds(int deciseconds);
 
 /**
+ * Set a time limit in milliseconds (1000 = 1 second, 0 = no limit).
+ */
+void vampire_set_time_limit_milliseconds(int milliseconds);
+
+/**
  * Enable or disable proof output.
  */
 void vampire_set_show_proof(bool show);
