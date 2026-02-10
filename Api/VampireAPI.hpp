@@ -262,6 +262,16 @@ Formula* forallF(unsigned varIndex, Formula* f);
 Formula* existsF(unsigned varIndex, Formula* f);
 
 /**
+ * Create a true (tautology) formula.
+ */
+Formula* trueF();
+
+/**
+ * Create a false (contradiction) formula.
+ */
+Formula* falseF();
+
+/**
  * Create an axiom formula unit.
  * @param f The formula
  * @return Pointer to the formula unit (as Unit*)

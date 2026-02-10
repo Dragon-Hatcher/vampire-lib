@@ -274,6 +274,14 @@ Formula* existsF(unsigned varIndex, Formula* f) {
     return new QuantifiedFormula(EXISTS, vars, nullptr, f);
 }
 
+Formula* trueF() {
+    return Formula::trueFormula();
+}
+
+Formula* falseF() {
+    return Formula::falseFormula();
+}
+
 Unit* axiomF(Formula* f) {
     return new FormulaUnit(f, FromInput(UnitInputType::AXIOM));
 }

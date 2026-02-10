@@ -299,6 +299,16 @@ vampire_formula_t* vampire_forall(unsigned int var_index, vampire_formula_t* f);
 vampire_formula_t* vampire_exists(unsigned int var_index, vampire_formula_t* f);
 
 /**
+ * Create a true (tautology) formula.
+ */
+vampire_formula_t* vampire_true(void);
+
+/**
+ * Create a false (contradiction) formula.
+ */
+vampire_formula_t* vampire_false(void);
+
+/**
  * Create an axiom formula unit.
  * @param f The formula
  * @return Unit handle

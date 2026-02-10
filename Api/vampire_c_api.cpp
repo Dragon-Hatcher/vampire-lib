@@ -180,6 +180,14 @@ vampire_formula_t* vampire_exists(unsigned int var_index, vampire_formula_t* f) 
     return FROM_FORMULA(Api::existsF(var_index, TO_FORMULA(f)));
 }
 
+vampire_formula_t* vampire_true(void) {
+    return FROM_FORMULA(Api::trueF());
+}
+
+vampire_formula_t* vampire_false(void) {
+    return FROM_FORMULA(Api::falseF());
+}
+
 vampire_unit_t* vampire_axiom_formula(vampire_formula_t* f) {
     return FROM_UNIT(Api::axiomF(TO_FORMULA(f)));
 }
