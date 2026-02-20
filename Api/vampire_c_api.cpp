@@ -308,27 +308,6 @@ int vampire_print_proof_to_file(const char* filename, vampire_unit_t* refutation
  * Structured Proof Access
  * =========================================== */
 
-static vampire_inference_rule_t convert_inference_rule(Kernel::InferenceRule rule) {
-    switch (rule) {
-        case Kernel::InferenceRule::INPUT:
-            return VAMPIRE_RULE_INPUT;
-        case Kernel::InferenceRule::RESOLUTION:
-            return VAMPIRE_RULE_RESOLUTION;
-        case Kernel::InferenceRule::FACTORING:
-            return VAMPIRE_RULE_FACTORING;
-        case Kernel::InferenceRule::SUPERPOSITION:
-            return VAMPIRE_RULE_SUPERPOSITION;
-        case Kernel::InferenceRule::EQUALITY_RESOLUTION:
-            return VAMPIRE_RULE_EQUALITY_RESOLUTION;
-        case Kernel::InferenceRule::EQUALITY_FACTORING:
-            return VAMPIRE_RULE_EQUALITY_FACTORING;
-        case Kernel::InferenceRule::CLAUSIFY:
-            return VAMPIRE_RULE_CLAUSIFY;
-        default:
-            return VAMPIRE_RULE_OTHER;
-    }
-}
-
 static vampire_input_type_t convert_input_type(Kernel::UnitInputType input_type) {
     switch (input_type) {
         case Kernel::UnitInputType::AXIOM:
@@ -367,7 +346,7 @@ int vampire_extract_proof(vampire_unit_t* refutation,
         vampire_proof_step_t& step = steps[i];
 
         step.id = cpp_step.id;
-        step.rule = convert_inference_rule(cpp_step.rule);
+        step.rule = static_cast<vampire_inference_rule_t>(static_cast<unsigned char>(cpp_step.rule));
         step.input_type = convert_input_type(cpp_step.inputType);
         step.unit = FROM_UNIT(cpp_step.unit);
         step.premise_count = cpp_step.premiseIds.size();
@@ -447,6 +426,17 @@ vampire_clause_t* vampire_unit_as_clause(vampire_unit_t* unit) {
     return nullptr;
 }
 
+vampire_formula_t* vampire_unit_as_formula(vampire_unit_t* unit) {
+    if (!unit) return nullptr;
+
+    Kernel::Unit* u = TO_UNIT(unit);
+    Kernel::Formula* f = u->getFormula();
+    if (f) {        
+        return FROM_FORMULA(f);
+    }
+    return nullptr;
+}
+
 bool vampire_clause_is_empty(vampire_clause_t* clause) {
     if (!clause) return false;
     return TO_CLAUSE(clause)->isEmpty();
@@ -510,20 +500,6 @@ char* vampire_formula_to_string(vampire_formula_t* formula) {
 
 void vampire_free_string(char* str) {
     free(str);
-}
-
-const char* vampire_rule_name(vampire_inference_rule_t rule) {
-    switch (rule) {
-        case VAMPIRE_RULE_INPUT: return "input";
-        case VAMPIRE_RULE_RESOLUTION: return "resolution";
-        case VAMPIRE_RULE_FACTORING: return "factoring";
-        case VAMPIRE_RULE_SUPERPOSITION: return "superposition";
-        case VAMPIRE_RULE_EQUALITY_RESOLUTION: return "equality_resolution";
-        case VAMPIRE_RULE_EQUALITY_FACTORING: return "equality_factoring";
-        case VAMPIRE_RULE_CLAUSIFY: return "clausify";
-        case VAMPIRE_RULE_OTHER: return "other";
-        default: return "unknown";
-    }
 }
 
 const char* vampire_input_type_name(vampire_input_type_t input_type) {
