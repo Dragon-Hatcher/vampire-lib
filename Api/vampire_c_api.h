@@ -27,6 +27,7 @@ extern "C" {
 
 #include <stddef.h>
 #include <stdbool.h>
+#include <stdint.h>
 
 /* ===========================================
  * Opaque Types
@@ -699,6 +700,35 @@ char* vampire_formula_to_string(vampire_formula_t* formula);
  * @param str The string to free
  */
 void vampire_free_string(char* str);
+
+/* ===========================================
+ * Structural Equality and Hashing
+ * =========================================== */
+
+/**
+ * Structural equality for terms.
+ * Returns true if the two terms have identical structure (same functor/variable and same arguments).
+ * Terms are hash-consed internally so this is an O(1) comparison.
+ */
+bool vampire_term_equal(vampire_term_t* a, vampire_term_t* b);
+
+/**
+ * Structural hash for terms.
+ * Consistent with vampire_term_equal: equal terms have the same hash.
+ */
+uint64_t vampire_term_hash(vampire_term_t* a);
+
+/**
+ * Structural equality for formulas.
+ * Returns true if the two formulas have identical structure.
+ */
+bool vampire_formula_equal(vampire_formula_t* a, vampire_formula_t* b);
+
+/**
+ * Structural hash for formulas.
+ * Consistent with vampire_formula_equal: equal formulas have the same hash.
+ */
+uint64_t vampire_formula_hash(vampire_formula_t* a);
 
 /**
  * Get the name of an inference rule.

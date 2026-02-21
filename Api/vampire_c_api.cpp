@@ -19,6 +19,7 @@
 
 #include <cstring>
 #include <fstream>
+#include <functional>
 #include <sstream>
 #include <vector>
 
@@ -36,6 +37,103 @@
 #define FROM_UNIT(u) (reinterpret_cast<vampire_unit_t*>(u))
 #define FROM_CLAUSE(c) (reinterpret_cast<vampire_clause_t*>(c))
 #define FROM_PROBLEM(p) (reinterpret_cast<vampire_problem_t*>(p))
+
+// Helper: structural equality for Formula (formulas are not hash-consed)
+static bool formulaEqual(const Kernel::Formula* a, const Kernel::Formula* b) {
+    if (a == b) return true;
+    if (a->connective() != b->connective()) return false;
+    switch (a->connective()) {
+        case Kernel::TRUE:
+        case Kernel::FALSE:
+            return true;
+        case Kernel::LITERAL:
+            // Literals are hash-consed, so pointer equality is structural equality
+            return a->literal() == b->literal();
+        case Kernel::NOT:
+            return formulaEqual(a->uarg(), b->uarg());
+        case Kernel::AND:
+        case Kernel::OR: {
+            auto* la = a->args();
+            auto* lb = b->args();
+            while (la && lb) {
+                if (!formulaEqual(la->head(), lb->head())) return false;
+                la = la->tail();
+                lb = lb->tail();
+            }
+            return !la && !lb;
+        }
+        case Kernel::IMP:
+        case Kernel::IFF:
+        case Kernel::XOR:
+            return formulaEqual(a->left(), b->left()) && formulaEqual(a->right(), b->right());
+        case Kernel::FORALL:
+        case Kernel::EXISTS: {
+            auto* va = a->vars();
+            auto* vb = b->vars();
+            while (va && vb) {
+                if (va->head() != vb->head()) return false;
+                va = va->tail();
+                vb = vb->tail();
+            }
+            return !va && !vb && formulaEqual(a->qarg(), b->qarg());
+        }
+        case Kernel::BOOL_TERM:
+            return a->getBooleanTerm() == b->getBooleanTerm();
+        default:
+            return false;
+    }
+}
+
+static size_t hashCombine(size_t h, size_t v) {
+    return h ^ (v + 0x9e3779b9 + (h << 6) + (h >> 2));
+}
+
+// Helper: structural hash for Formula
+static size_t formulaHash(const Kernel::Formula* f) {
+    size_t h = std::hash<unsigned>{}(static_cast<unsigned>(f->connective()));
+    switch (f->connective()) {
+        case Kernel::TRUE:
+        case Kernel::FALSE:
+            break;
+        case Kernel::LITERAL:
+            h = hashCombine(h, std::hash<const void*>{}(f->literal()));
+            break;
+        case Kernel::NOT:
+            h = hashCombine(h, formulaHash(f->uarg()));
+            break;
+        case Kernel::AND:
+        case Kernel::OR: {
+            auto* l = f->args();
+            while (l) {
+                h = hashCombine(h, formulaHash(l->head()));
+                l = l->tail();
+            }
+            break;
+        }
+        case Kernel::IMP:
+        case Kernel::IFF:
+        case Kernel::XOR:
+            h = hashCombine(h, formulaHash(f->left()));
+            h = hashCombine(h, formulaHash(f->right()));
+            break;
+        case Kernel::FORALL:
+        case Kernel::EXISTS: {
+            auto* v = f->vars();
+            while (v) {
+                h = hashCombine(h, std::hash<unsigned>{}(v->head()));
+                v = v->tail();
+            }
+            h = hashCombine(h, formulaHash(f->qarg()));
+            break;
+        }
+        case Kernel::BOOL_TERM:
+            h = hashCombine(h, std::hash<uint64_t>{}(f->getBooleanTerm().content()));
+            break;
+        default:
+            break;
+    }
+    return h;
+}
 
 extern "C" {
 
@@ -509,6 +607,26 @@ const char* vampire_input_type_name(vampire_input_type_t input_type) {
         case VAMPIRE_CONJECTURE: return "conjecture";
         default: return "unknown";
     }
+}
+
+/* ===========================================
+ * Structural Equality and Hashing
+ * =========================================== */
+
+bool vampire_term_equal(vampire_term_t* a, vampire_term_t* b) {
+    return TO_TERM(a) == TO_TERM(b);
+}
+
+uint64_t vampire_term_hash(vampire_term_t* a) {
+    return TO_TERM(a).content();
+}
+
+bool vampire_formula_equal(vampire_formula_t* a, vampire_formula_t* b) {
+    return formulaEqual(TO_FORMULA(a), TO_FORMULA(b));
+}
+
+uint64_t vampire_formula_hash(vampire_formula_t* a) {
+    return static_cast<uint64_t>(formulaHash(TO_FORMULA(a)));
 }
 
 } // extern "C"
