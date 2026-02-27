@@ -74,8 +74,66 @@ void prepareForNextProof() {
     // and saturation loop don't immediately trigger
     env.statistics->terminationReason = Shell::TerminationReason::UNKNOWN;
 
+    // Reset statistics fields that affect saturation behavior.
+    // - activations: used to detect LRS start time and in reachable-count
+    //   estimates; if inherited from P1 the LRS start time is never recorded
+    //   for P2 (_lrsStartTime stays 0), corrupting LRS estimates.
+    // - discardedNonRedundantClauses / inferencesSkippedDueToColors: used in
+    //   isComplete(); if non-zero from P1, P2 returns REFUTATION_NOT_FOUND
+    //   instead of SATISFIABLE when passive queue empties.
+    env.statistics->activations = 0;
+    env.statistics->discardedNonRedundantClauses = 0;
+    env.statistics->inferencesSkippedDueToColors = 0;
+
+    // Reset the preprocessing-end marker so that clauses created during the
+    // next proof's preprocessing are correctly identified as preprocessing
+    // clauses (isFromPreprocessing() returns true).  Without this reset the
+    // stale value from the previous proof causes newly-created clauses to be
+    // misclassified as saturation clauses and silently destroyed when their
+    // reference count drops to zero during preprocessing.
+    Unit::resetPreprocessingEnd();
+
     // Reset the global ordering so the next proof can set its own
     Ordering::unsetGlobalOrdering();
+
+    // Reset static ordering caches that store results keyed to the previous
+    // ordering object.  Without this, P2 can hit stale cached comparisons
+    // from P1's ordering, causing the superposition algorithm to miss
+    // inferences and return SATISFIABLE for a problem that is actually
+    // unsatisfiable.
+    Term::resetStaticCaches();
+    AtomicSort::resetStaticCaches();
+    PartialOrdering::resetStaticCaches();
+    TermPartialOrdering::resetStaticCaches();
+    TermOrderingDiagram::resetStaticCaches();
+    EqualityProxyMono::resetStaticCaches();
+
+    // Reset symbol usage counts.  The default symbol precedence (FREQUENCY)
+    // sorts symbols by usage count.  After a proof, usage counts reflect
+    // how often each symbol was used in that proof.  If not reset, the next
+    // proof builds a KBO ordering with a different precedence, which can
+    // block key inferences and cause the saturation to report SATISFIABLE
+    // for a problem that is actually unsatisfiable.
+    for (unsigned i = 0; i < env.signature->functions(); i++) {
+        env.signature->getFunction(i)->resetUsageCnt();
+    }
+    for (unsigned i = 0; i < env.signature->predicates(); i++) {
+        env.signature->getPredicate(i)->resetUsageCnt();
+    }
+
+    // Invalidate all KBO weight caches stored on shared terms.  The KBO
+    // ordering object is recreated for each proof, so weights cached during
+    // P1 are wrong for P2.  In release builds there is no per-term pointer
+    // check (that only exists in VDEBUG), so without an epoch bump P2 would
+    // silently reuse P1's stale weights and produce wrong ordering decisions.
+    Term::invalidateKboWeightCache();
+
+    // Reset cached equality argument orders on all shared literals.  The order
+    // of equality arguments (which side is larger) is cached on each literal and
+    // is only valid for the ordering that was active when it was set.  Without
+    // this reset, P2's ordering silently reuses P1's orientations, which can
+    // direct superposition inferences the wrong way and prevent finding a proof.
+    env.sharing->resetEqualityArgumentOrders();
 
     // Reset EXIT_LOCK to allow proofs on different threads.
     // disableLimitEnforcement() locks EXIT_LOCK without unlocking,
@@ -367,13 +425,37 @@ Problem* problem(const std::vector<Unit*>& units) {
     return prb;
 }
 
+static unsigned _proveCallCount = 0;
+
 ProofResult prove(Problem* prb) {
     // Ensure problem is set
     env.setMainProblem(prb);
 
+    _proveCallCount++;
+    bool debugThisCall = false;
+    if (debugThisCall) {
+        env.options->set("show_preprocessing", "on");
+        std::cerr << "[DEBUG] Proving call #" << _proveCallCount << ", input units:" << std::endl;
+        UnitList::Iterator it(prb->units());
+        while (it.hasNext()) {
+            Unit* u = it.next();
+            std::cerr << "  " << u->toString() << std::endl;
+        }
+    }
+
     // Preprocess if we have formulas (convert to clauses)
     Shell::Preprocess prepro(*env.options);
     prepro.preprocess(*prb);
+
+    if (debugThisCall) {
+        std::cerr << "[DEBUG] After preprocessing, units:" << std::endl;
+        UnitList::Iterator it2(prb->units());
+        while (it2.hasNext()) {
+            Unit* u = it2.next();
+            std::cerr << "  " << u->toString() << std::endl;
+        }
+        env.options->set("show_preprocessing", "off");
+    }
 
     // Run the saturation algorithm
     ProvingHelper::runVampireSaturation(*prb, *env.options);

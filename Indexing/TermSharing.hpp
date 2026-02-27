@@ -64,6 +64,13 @@ public:
     return &_arraySorts;
   }
 
+  /** Reset cached equality argument orders on all shared literals.
+   * Must be called between proofs: the argument order (which side of an
+   * equality is larger) is cached per-literal and keyed to the global ordering.
+   * When a new ordering is installed for the next proof the stale cached values
+   * would otherwise be silently reused, causing wrong superposition inferences. */
+  void resetEqualityArgumentOrders();
+
   struct OpLitWrapper {
     OpLitWrapper(Literal* l) : l(l) {}
     Literal* l;

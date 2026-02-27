@@ -1255,6 +1255,10 @@ Term* Term::create(unsigned fn, std::initializer_list<TermList> args)
 // Static cached pointers for singleton terms (resettable for library use)
 static Term* s_foolTrue = nullptr;
 static Term* s_foolFalse = nullptr;
+
+// KBO weight cache epoch counter.  Starts at 1 so freshly-created terms
+// (with _kboEpoch=0) are always stale until explicitly warmed.
+unsigned Term::s_kboEpoch = 1;
 static AtomicSort* s_superSort = nullptr;
 static AtomicSort* s_defaultSort = nullptr;
 static AtomicSort* s_boolSort = nullptr;
@@ -1715,6 +1719,7 @@ Term::Term(const Term& t) throw()
     _isTwoVarEquality(0),
     _weight(0),
     _kboWeight(-1),
+    _kboEpoch(0),
 #if VDEBUG
     _kboInstance(nullptr),
 #endif
@@ -1749,6 +1754,7 @@ Term::Term() throw()
    _isTwoVarEquality(0),
    _weight(0),
    _kboWeight(-1),
+   _kboEpoch(0),
 #if VDEBUG
    _kboInstance(nullptr),
 #endif

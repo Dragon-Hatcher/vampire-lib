@@ -338,6 +338,24 @@ bool TermSharing::argNormGt(TermList t1, TermList t2)
  * @pre s and t must be non-variable terms
  * @since 28/12/2007 Manchester
  */
+void TermSharing::resetEqualityArgumentOrders()
+{
+  // Reset the cached equality argument order on every shared equality literal.
+  // This cached value (AO_GREATER / AO_LESS / …) is computed by the global
+  // ordering and stored directly on the literal so that subsequent calls to
+  // getEqualityArgumentOrder() can skip the ordering comparison.  When a new
+  // ordering is installed for the next proof the stale cached values must be
+  // cleared; otherwise the new ordering silently reuses the old orientation,
+  // which can block or mis-direct superposition inferences.
+  Set<Literal*,TermSharing>::Iterator lit_it(_literals);
+  while (lit_it.hasNext()) {
+    Literal* lit = lit_it.next();
+    if (lit->isEquality()) {
+      lit->setArgumentOrderValue(AO_UNKNOWN);
+    }
+  }
+}
+
 bool TermSharing::equals(const Term* s, const Term* t)
 {
   if (s->functor() != t->functor())

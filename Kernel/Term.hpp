@@ -691,19 +691,27 @@ public:
 
   int kboWeight(const void* kboInstance) const
   {
-    ASS(_kboInstance || _kboWeight == -1);
-    ASS(!_kboInstance || _kboInstance == kboInstance);
+    if (_kboEpoch != s_kboEpoch) return -1;
+#if VDEBUG
+    ASS(_kboInstance && _kboInstance == kboInstance);
+#endif
     return _kboWeight;
   }
 
   void setKboWeight(int w, const void* kboInstance)
   {
 #if VDEBUG
-    ASS(!_kboInstance);
+    ASS(!_kboInstance || _kboEpoch != s_kboEpoch);
     _kboInstance = kboInstance;
 #endif
     _kboWeight = w;
+    _kboEpoch = s_kboEpoch;
   }
+
+  /** Invalidate all cached KBO weights across all shared terms.
+   * Must be called whenever a new KBO ordering is created (e.g. between proofs)
+   * so that stale weights from the previous ordering are not reused. */
+  static void invalidateKboWeightCache() { ++s_kboEpoch; }
 
   /** Mark term as shared */
   void markShared()
@@ -967,6 +975,10 @@ protected:
   /** Cached weight of the term for KBO, otherwise -1 and invalid. Note that
    * KBO symbol weights are not necessarily 1, so this can differ from @b _weight. */
   int _kboWeight;
+  /** Epoch at which _kboWeight was cached. If this differs from s_kboEpoch the
+   * cached weight is stale and must be recomputed. Initialized to 0 so it is
+   * always stale before any KBO ordering is created (s_kboEpoch starts at 1). */
+  unsigned _kboEpoch;
 #if VDEBUG
   /** KBO instance that uses the cached value @b _kboWeight. */
   const void* _kboInstance;
@@ -990,6 +1002,11 @@ protected:
   friend class TermList;
   friend class Indexing::TermSharing;
   friend class Ordering;
+
+  /** Global KBO epoch counter. Incrementing this invalidates all per-term
+   * cached KBO weights, allowing a new ordering to be used without iterating
+   * all shared terms. Starts at 1 so _kboEpoch=0 (new terms) is always stale. */
+  static unsigned s_kboEpoch;
 
 public:
   /**
