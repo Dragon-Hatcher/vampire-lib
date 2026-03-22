@@ -195,10 +195,21 @@ vampire_problem_t* vampire_problem_from_units(vampire_unit_t** units, size_t cou
 }
 
 vampire_proof_result_t vampire_prove(vampire_problem_t* problem) {
-    Api::ProofResult result = Api::prove(TO_PROBLEM(problem));
-    if (result == Api::ProofResult::PROOF) return VAMPIRE_PROOF;
-    if (result == Api::ProofResult::SATISFIABLE) return VAMPIRE_SATISFIABLE;
-    return VAMPIRE_UNKNOWN;
+    try {
+        Api::ProofResult result = Api::prove(TO_PROBLEM(problem));
+        if (result == Api::ProofResult::PROOF) return VAMPIRE_PROOF;
+        if (result == Api::ProofResult::SATISFIABLE) return VAMPIRE_SATISFIABLE;
+        if (result == Api::ProofResult::TIMEOUT) return VAMPIRE_TIMEOUT;
+        if (result == Api::ProofResult::MEMORY_LIMIT) return VAMPIRE_MEMORY_LIMIT;
+        if (result == Api::ProofResult::INCOMPLETE) return VAMPIRE_INCOMPLETE;
+        return VAMPIRE_UNKNOWN;
+    } catch (std::exception& e) {
+        std::cerr << "[Vampire] prove() std::exception: " << e.what() << std::endl;
+        return VAMPIRE_UNKNOWN;
+    } catch (...) {
+        std::cerr << "[Vampire] prove() unknown exception" << std::endl;
+        return VAMPIRE_UNKNOWN;
+    }
 }
 
 size_t vampire_clausify(vampire_problem_t* problem) { Api::clausify(TO_PROBLEM(problem)); return Api::getCNF(TO_PROBLEM(problem)).size(); }
