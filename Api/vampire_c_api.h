@@ -390,6 +390,14 @@ void vampire_set_show_proof(bool show);
  */
 void vampire_set_saturation_algorithm(const char* algorithm);
 
+/**
+ * Set a generic Vampire option by name and value string.
+ * This maps directly to env.options->set(name, value).
+ * Example: vampire_set_option("mode", "casc") enables CASC portfolio mode.
+ * Returns 0 on success, -1 if the option name or value is invalid.
+ */
+int vampire_set_option(const char* name, const char* value);
+
 /* ===========================================
  * Symbol Registration
  * =========================================== */

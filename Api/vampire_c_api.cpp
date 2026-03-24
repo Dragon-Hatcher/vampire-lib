@@ -80,6 +80,22 @@ void vampire_reset(void) { Api::reset(); }
 
 void vampire_set_time_limit_milliseconds(int ms) { Api::options().setTimeLimitInMilliseconds(ms); }
 
+void vampire_set_saturation_algorithm(const char* algorithm) {
+    try { Api::options().set("saturation_algorithm", algorithm); } catch (...) {}
+}
+
+int vampire_set_option(const char* name, const char* value) {
+    try {
+        Api::options().set(name, value);
+        return 0;
+    } catch (Lib::UserErrorException& e) {
+        std::cerr << "[Vampire] set_option error: " << e.msg() << std::endl;
+        return -1;
+    } catch (...) {
+        return -1;
+    }
+}
+
 unsigned int vampire_add_function(const char* name, unsigned int arity) { return Api::addFunction(std::string(name), arity); }
 unsigned int vampire_add_predicate(const char* name, unsigned int arity) { return Api::addPredicate(std::string(name), arity); }
 
