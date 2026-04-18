@@ -779,6 +779,32 @@ size_t vampire_clausify(vampire_problem_t* problem);
 int vampire_get_cnf(vampire_problem_t* problem, char*** out_clauses, size_t* out_count);
 
 /**
+ * Enumerate the units in a problem as a heap-allocated array of handles.
+ *
+ * Typically called after vampire_clausify(), in which case every returned unit
+ * is a clause (and can be converted via vampire_unit_as_clause).  The returned
+ * handles are borrowed -- they are owned by the problem and must NOT be freed
+ * with vampire_free_unit.  Free the containing array with
+ * vampire_free_unit_array().
+ *
+ * @param problem The problem to read units from
+ * @param out_units Pointer to receive the heap-allocated array of unit handles
+ * @param out_count Pointer to receive the number of units
+ * @return 0 on success, -1 on error
+ */
+int vampire_problem_units(vampire_problem_t* problem, vampire_unit_t*** out_units, size_t* out_count);
+
+/**
+ * Free a unit-handle array returned by vampire_problem_units().
+ *
+ * Only the outer array is freed; the individual units remain owned by the
+ * problem.
+ *
+ * @param units The array to free
+ */
+void vampire_free_unit_array(vampire_unit_t** units);
+
+/**
  * Free an array of strings returned by vampire_get_cnf.
  * @param strings The array
  * @param count The number of strings

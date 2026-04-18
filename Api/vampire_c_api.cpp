@@ -323,4 +323,67 @@ const char* vampire_predicate_name(unsigned int predicate_idx) {
     return Lib::env.signature->getPredicate(predicate_idx)->name().c_str();
 }
 
+// ---- Clause / Unit readers (previously declared but never defined) --------
+//
+// These complement the structured literal/term readers above.  They are the
+// entry points that let a Rust caller walk a post-clausify Problem down to
+// individual Term structure without going through string parsing.
+
+vampire_clause_t* vampire_unit_as_clause(vampire_unit_t* unit) {
+    Kernel::Unit* u = TO_UNIT(unit);
+    if (!u || !u->isClause()) return nullptr;
+    return FROM_CLAUSE(u->asClause());
+}
+
+bool vampire_clause_is_empty(vampire_clause_t* clause) {
+    Kernel::Clause* c = TO_CLAUSE(clause);
+    return c ? c->isEmpty() : true;
+}
+
+int vampire_get_literals(vampire_clause_t* clause,
+                         vampire_literal_t*** out_literals,
+                         size_t* out_count) {
+    std::vector<Kernel::Literal*> lits = Api::getLiterals(TO_CLAUSE(clause));
+    *out_count = lits.size();
+    vampire_literal_t** arr =
+        (vampire_literal_t**)malloc(lits.size() * sizeof(vampire_literal_t*));
+    for (size_t i = 0; i < lits.size(); i++) {
+        arr[i] = FROM_LITERAL(lits[i]);
+    }
+    *out_literals = arr;
+    return 0;
+}
+
+void vampire_free_literals(vampire_literal_t** literals) {
+    free(literals);
+}
+
+// ---- Post-clausify unit enumeration ---------------------------------------
+
+int vampire_problem_units(vampire_problem_t* problem,
+                          vampire_unit_t*** out_units,
+                          size_t* out_count) {
+    Kernel::Problem* prb = TO_PROBLEM(problem);
+    if (!prb) {
+        *out_units = nullptr;
+        *out_count = 0;
+        return -1;
+    }
+    std::vector<Kernel::Unit*> tmp;
+    Kernel::UnitList::Iterator it(prb->units());
+    while (it.hasNext()) tmp.push_back(it.next());
+    *out_count = tmp.size();
+    vampire_unit_t** arr =
+        (vampire_unit_t**)malloc(tmp.size() * sizeof(vampire_unit_t*));
+    for (size_t i = 0; i < tmp.size(); i++) {
+        arr[i] = FROM_UNIT(tmp[i]);
+    }
+    *out_units = arr;
+    return 0;
+}
+
+void vampire_free_unit_array(vampire_unit_t** units) {
+    free(units);
+}
+
 } // extern "C"
