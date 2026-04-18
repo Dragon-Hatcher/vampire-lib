@@ -953,6 +953,71 @@ const char* vampire_rule_name(vampire_inference_rule_t rule);
  */
 const char* vampire_input_type_name(vampire_input_type_t input_type);
 
+/* ===========================================
+ * Structured Literal / Term Readers
+ *
+ * These complement vampire_get_literals() / vampire_clause_*() by giving
+ * the caller access to the internal structure of a Literal or Term
+ * without going through stringification.  Used by consumers that need
+ * to reason about clause structure (e.g. canonical-hash-based clause
+ * deduplication).  All pointers returned here are borrowed views into
+ * Vampire's internal hash-consed term storage unless otherwise noted.
+ * =========================================== */
+
+/** Return the predicate functor index of `lit`. */
+unsigned int vampire_literal_predicate(vampire_literal_t* lit);
+
+/** Return true if `lit` is a positive literal. */
+bool vampire_literal_is_positive(vampire_literal_t* lit);
+
+/** Return true if `lit` is an equality literal (functor 0). */
+bool vampire_literal_is_equality(vampire_literal_t* lit);
+
+/** Return the arity of `lit` (argument count). */
+size_t vampire_literal_arity(vampire_literal_t* lit);
+
+/**
+ * Return the i-th argument of `lit` as a freshly heap-allocated
+ * vampire_term_t (wrapping a TermList value copy).  The caller owns
+ * the wrapper and does not need to free it today (matches the
+ * convention of the other vampire_term_t producers).
+ */
+vampire_term_t* vampire_literal_arg(vampire_literal_t* lit, size_t i);
+
+/** Return true if `term` is a variable (ordinary or special). */
+bool vampire_term_is_var(vampire_term_t* term);
+
+/** Return the variable index of `term`; undefined if not a variable. */
+unsigned int vampire_term_var_index(vampire_term_t* term);
+
+/**
+ * Return the function functor index of `term`; undefined if `term` is
+ * a variable.  Callers should check vampire_term_is_var() first.
+ */
+unsigned int vampire_term_functor(vampire_term_t* term);
+
+/** Return the arity (argument count) of `term`; 0 for variables and constants. */
+size_t vampire_term_arity(vampire_term_t* term);
+
+/**
+ * Return the i-th argument of `term` as a freshly heap-allocated
+ * vampire_term_t wrapper.  Undefined if `term` is a variable.
+ */
+vampire_term_t* vampire_term_arg(vampire_term_t* term, size_t i);
+
+/**
+ * Return a pointer to the (borrowed, static-lifetime) name of the
+ * function symbol with index `functor_idx`.  The pointer is valid for
+ * the lifetime of the Vampire environment.  Do not free.
+ */
+const char* vampire_functor_name(unsigned int functor_idx);
+
+/**
+ * Return a pointer to the (borrowed, static-lifetime) name of the
+ * predicate symbol with index `predicate_idx`.  Do not free.
+ */
+const char* vampire_predicate_name(unsigned int predicate_idx);
+
 #ifdef __cplusplus
 }
 #endif

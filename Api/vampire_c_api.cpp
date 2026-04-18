@@ -14,6 +14,8 @@
 
 #include "vampire_c_api.h"
 #include "VampireAPI.hpp"
+#include "Lib/Environment.hpp"
+#include "Kernel/Signature.hpp"
 
 #include <cstring>
 #include <fstream>
@@ -262,5 +264,63 @@ bool vampire_term_equal(vampire_term_t* a, vampire_term_t* b) { return TO_TERM(a
 uint64_t vampire_term_hash(vampire_term_t* a) { return TO_TERM(a).content(); }
 bool vampire_formula_equal(vampire_formula_t* a, vampire_formula_t* b) { return formulaEqual(TO_FORMULA(a), TO_FORMULA(b)); }
 uint64_t vampire_formula_hash(vampire_formula_t* a) { return static_cast<uint64_t>(formulaHash(TO_FORMULA(a))); }
+
+// ---- Structured Literal / Term readers -------------------------------------
+//
+// Thin wrappers over Kernel::Literal / Kernel::Term / Kernel::TermList that
+// surface the structure the Rust IR layer needs to rebuild a vampire_prover
+// clause without round-tripping through string parsing.  All returned
+// vampire_term_t* pointers wrap heap-allocated TermList copies (matching
+// FROM_TERM's convention elsewhere in this file).
+
+unsigned int vampire_literal_predicate(vampire_literal_t* lit) {
+    return TO_LITERAL(lit)->functor();
+}
+
+bool vampire_literal_is_positive(vampire_literal_t* lit) {
+    return TO_LITERAL(lit)->isPositive();
+}
+
+bool vampire_literal_is_equality(vampire_literal_t* lit) {
+    return TO_LITERAL(lit)->isEquality();
+}
+
+size_t vampire_literal_arity(vampire_literal_t* lit) {
+    return TO_LITERAL(lit)->arity();
+}
+
+vampire_term_t* vampire_literal_arg(vampire_literal_t* lit, size_t i) {
+    return FROM_TERM(*TO_LITERAL(lit)->nthArgument(static_cast<int>(i)));
+}
+
+bool vampire_term_is_var(vampire_term_t* term) {
+    return TO_TERM(term).isVar();
+}
+
+unsigned int vampire_term_var_index(vampire_term_t* term) {
+    return TO_TERM(term).var();
+}
+
+unsigned int vampire_term_functor(vampire_term_t* term) {
+    return TO_TERM(term).term()->functor();
+}
+
+size_t vampire_term_arity(vampire_term_t* term) {
+    Kernel::TermList& tl = TO_TERM(term);
+    if (tl.isVar()) return 0;
+    return tl.term()->arity();
+}
+
+vampire_term_t* vampire_term_arg(vampire_term_t* term, size_t i) {
+    return FROM_TERM(*TO_TERM(term).term()->nthArgument(static_cast<int>(i)));
+}
+
+const char* vampire_functor_name(unsigned int functor_idx) {
+    return Lib::env.signature->getFunction(functor_idx)->name().c_str();
+}
+
+const char* vampire_predicate_name(unsigned int predicate_idx) {
+    return Lib::env.signature->getPredicate(predicate_idx)->name().c_str();
+}
 
 } // extern "C"
