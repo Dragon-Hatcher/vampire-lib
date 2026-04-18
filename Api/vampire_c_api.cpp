@@ -230,7 +230,26 @@ vampire_proof_result_t vampire_prove(vampire_problem_t* problem) {
     }
 }
 
-size_t vampire_clausify(vampire_problem_t* problem) { Api::clausify(TO_PROBLEM(problem)); return Api::getCNF(TO_PROBLEM(problem)).size(); }
+// Wrap Api::clausify in try/catch so that C++ exceptions thrown by
+// NewCNF (e.g. on formulas with shapes the clausifier chokes on) do
+// NOT propagate across the FFI boundary as foreign exceptions and
+// abort the Rust process.  Returns (size_t)-1 on exception so the
+// caller can skip the offending formula and continue.
+size_t vampire_clausify(vampire_problem_t* problem) {
+    try {
+        Api::clausify(TO_PROBLEM(problem));
+        return Api::getCNF(TO_PROBLEM(problem)).size();
+    } catch (Lib::Exception& e) {
+        std::cerr << "[Vampire] clausify() Lib::Exception: " << e.msg() << std::endl;
+        return static_cast<size_t>(-1);
+    } catch (std::exception& e) {
+        std::cerr << "[Vampire] clausify() std::exception: " << e.what() << std::endl;
+        return static_cast<size_t>(-1);
+    } catch (...) {
+        std::cerr << "[Vampire] clausify() unknown exception" << std::endl;
+        return static_cast<size_t>(-1);
+    }
+}
 int vampire_get_cnf(vampire_problem_t* problem, char*** out_clauses, size_t* out_count) {
     std::vector<std::string> cpp_clauses = Api::getCNF(TO_PROBLEM(problem));
     *out_count = cpp_clauses.size();
