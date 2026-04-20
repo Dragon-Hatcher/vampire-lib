@@ -892,6 +892,51 @@ vampire_clause_t* vampire_unit_as_clause(vampire_unit_t* unit);
 vampire_formula_t* vampire_unit_as_formula(vampire_unit_t* unit);
 
 /**
+ * Vampire's unique identifier for this unit.
+ *
+ * Every Unit Vampire creates (axiom, conjecture, derived clause, or
+ * derived formula) carries a monotonically-allocated unit_number.
+ * Callers that want to attribute a post-clausify clause to the
+ * input axiom it originated from can:
+ *
+ *   1. Record the unit_number of each axiom via vampire_axiom_formula.
+ *   2. Clausify.
+ *   3. For every output unit, walk vampire_unit_parent transitively
+ *      until a recorded input number is reached.
+ *
+ * @param unit The unit (axiom, conjecture, or derived).
+ * @return The unit's Vampire-internal number.
+ */
+uint32_t vampire_unit_number(vampire_unit_t* unit);
+
+/**
+ * Number of direct inference-parents of this unit.
+ *
+ * Input units (axioms, conjecture) typically return 0.  Derived units
+ * (e.g. CNF output clauses) return >= 1 — one for each direct parent
+ * in the inference graph.
+ *
+ * @param unit The unit.
+ * @return Parent count.
+ */
+size_t vampire_unit_parent_count(vampire_unit_t* unit);
+
+/**
+ * The `i`-th direct inference-parent of this unit.
+ *
+ * Parents are enumerated in the order Vampire's Inference::Iterator
+ * yields them.  The returned pointer aliases an existing unit in
+ * Vampire's internal state; do NOT free it.  The pointer is only
+ * valid as long as Vampire's state that produced it lives (i.e.
+ * until the next vampire_prepare_for_next_proof() call).
+ *
+ * @param unit The unit.
+ * @param i The 0-based parent index (must be < vampire_unit_parent_count).
+ * @return The parent unit, or NULL if `i` is out of range.
+ */
+vampire_unit_t* vampire_unit_parent(vampire_unit_t* unit, size_t i);
+
+/**
  * Check if a clause is empty (represents false).
  * @param clause The clause
  * @return true if empty, false otherwise

@@ -16,6 +16,7 @@
 #include "VampireAPI.hpp"
 #include "Lib/Environment.hpp"
 #include "Kernel/Signature.hpp"
+#include "Kernel/Inference.hpp"
 
 #include <cstring>
 #include <fstream>
@@ -356,6 +357,44 @@ vampire_clause_t* vampire_unit_as_clause(vampire_unit_t* u) {
     return (unit && unit->isClause()) ? FROM_CLAUSE(unit->asClause()) : nullptr;
 }
 bool vampire_clause_is_empty(vampire_clause_t* c) { return TO_CLAUSE(c)->isEmpty(); }
+
+// -- Unit identity + inference-graph walk for batch clausification ---------
+//
+// These three shims together let a Rust caller attribute a
+// post-clausify output clause back to the input axiom it originated
+// from, without having to run clausify once per axiom.  Vampire
+// populates Unit::number() at construction time and builds a full
+// Inference tree recording direct parents — everything we need is
+// already tracked internally; we just expose it.
+
+uint32_t vampire_unit_number(vampire_unit_t* u) {
+    Kernel::Unit* unit = TO_UNIT(u);
+    return unit ? (uint32_t)unit->number() : 0u;
+}
+
+size_t vampire_unit_parent_count(vampire_unit_t* u) {
+    Kernel::Unit* unit = TO_UNIT(u);
+    if (!unit) return 0;
+    const Kernel::Inference& inf = unit->inference();
+    Kernel::Inference::Iterator it = inf.iterator();
+    size_t count = 0;
+    while (inf.hasNext(it)) { (void)inf.next(it); count++; }
+    return count;
+}
+
+vampire_unit_t* vampire_unit_parent(vampire_unit_t* u, size_t idx) {
+    Kernel::Unit* unit = TO_UNIT(u);
+    if (!unit) return nullptr;
+    const Kernel::Inference& inf = unit->inference();
+    Kernel::Inference::Iterator it = inf.iterator();
+    size_t pos = 0;
+    while (inf.hasNext(it)) {
+        Kernel::Unit* parent = inf.next(it);
+        if (pos == idx) return FROM_UNIT(parent);
+        pos++;
+    }
+    return nullptr;
+}
 
 int vampire_get_literals(vampire_clause_t* c, vampire_literal_t*** out_literals, size_t* out_count) {
     std::vector<Kernel::Literal*> lits = Api::getLiterals(TO_CLAUSE(c));
