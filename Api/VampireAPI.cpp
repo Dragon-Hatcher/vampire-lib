@@ -31,6 +31,7 @@
 #include "Kernel/Inference.hpp"
 #include "Kernel/InferenceStore.hpp"
 #include "Kernel/OperatorType.hpp"
+#include "Kernel/Theory.hpp"
 #include "Kernel/Unit.hpp"
 
 #include "Indexing/TermSharing.hpp"
@@ -38,6 +39,9 @@
 #include "Shell/Options.hpp"
 #include "Shell/Statistics.hpp"
 #include "Shell/Preprocess.hpp"
+#include "Shell/NNF.hpp"
+#include "Shell/CNF.hpp"
+#include "Shell/NewCNF.hpp"
 
 #include "Saturation/ProvingHelper.hpp"
 
@@ -225,6 +229,74 @@ unsigned addPredicate(const std::string& name, unsigned arity) {
     return pred;
 }
 
+unsigned addInterpretedFunction(const std::string& name, Interpretation interp) {
+    return env.signature->addInterpretedFunction(interp, name);
+}
+
+unsigned addInterpretedPredicate(const std::string& name, Interpretation interp) {
+    return env.signature->addInterpretedPredicate(interp, name);
+}
+
+unsigned addIntegerConstant(const std::string& value) {
+    auto n = IntegerConstantType::parse(value);
+    if (n.isNone()) return 0;
+    return env.signature->addNumeralConstant(*n);
+}
+
+unsigned addRationalConstant(const std::string& value) {
+    auto n = RationalConstantType::parse(value);
+    if (n.isNone()) return 0;
+    return env.signature->addNumeralConstant(*n);
+}
+
+unsigned addRealConstant(const std::string& value) {
+    auto n = RealConstantType::parse(value);
+    if (n.isNone()) return 0;
+    return env.signature->addNumeralConstant(*n);
+}
+
+// ===========================================
+// Sort Registration (TFF)
+// ===========================================
+
+static TermList reconstructSort(unsigned id) {
+    if (id == env.signature->getDefaultSort()) return AtomicSort::defaultSort();
+    if (id == env.signature->getBoolSort()) return AtomicSort::boolSort();
+    if (id == env.signature->getIntSort()) return AtomicSort::intSort();
+    if (id == env.signature->getRealSort()) return AtomicSort::realSort();
+    if (id == env.signature->getRatSort()) return AtomicSort::rationalSort();
+    return TermList(AtomicSort::createConstant(id));
+}
+
+unsigned addSort(const std::string& name) {
+    bool added;
+    return env.signature->addTypeCon(name, 0, added);
+}
+
+unsigned defaultSort() { return env.signature->getDefaultSort(); }
+unsigned sortBool() { return env.signature->getBoolSort(); }
+unsigned sortInt() { return env.signature->getIntSort(); }
+unsigned sortReal() { return env.signature->getRealSort(); }
+unsigned sortRational() { return env.signature->getRatSort(); }
+
+unsigned addTypedFunction(const std::string& name, const std::vector<unsigned>& argSortIndices, unsigned returnSortIndex) {
+    unsigned functor = env.signature->addFunction(name, argSortIndices.size());
+    Stack<TermList> args;
+    for (unsigned s : argSortIndices) args.push(reconstructSort(s));
+    env.signature->getFunction(functor)->setType(
+        OperatorType::getFunctionType(argSortIndices.size(), args.begin(), reconstructSort(returnSortIndex)));
+    return functor;
+}
+
+unsigned addTypedPredicate(const std::string& name, const std::vector<unsigned>& argSortIndices) {
+    unsigned pred = env.signature->addPredicate(name, argSortIndices.size());
+    Stack<TermList> args;
+    for (unsigned s : argSortIndices) args.push(reconstructSort(s));
+    env.signature->getPredicate(pred)->setType(
+        OperatorType::getPredicateType(argSortIndices.size(), args.begin()));
+    return pred;
+}
+
 // ===========================================
 // Term Construction
 // ===========================================
@@ -330,6 +402,26 @@ Formula* existsF(unsigned varIndex, Formula* f) {
     VList* vars = nullptr;
     VList::push(varIndex, vars);
     return new QuantifiedFormula(EXISTS, vars, nullptr, f);
+}
+
+Formula* forallTyped(unsigned varIndex, unsigned sortIndex, Formula* f) {
+    VList* vars = nullptr;
+    VList::push(varIndex, vars);
+    SList* sorts = nullptr;
+    SList::push(reconstructSort(sortIndex), sorts);
+    return new QuantifiedFormula(FORALL, vars, sorts, f);
+}
+
+Formula* existsTyped(unsigned varIndex, unsigned sortIndex, Formula* f) {
+    VList* vars = nullptr;
+    VList::push(varIndex, vars);
+    SList* sorts = nullptr;
+    SList::push(reconstructSort(sortIndex), sorts);
+    return new QuantifiedFormula(EXISTS, vars, sorts, f);
+}
+
+Literal* typedEq(bool positive, TermList lhs, TermList rhs, unsigned sortIndex) {
+    return Literal::createEquality(positive, lhs, rhs, reconstructSort(sortIndex));
 }
 
 Formula* trueF() {
@@ -444,8 +536,16 @@ ProofResult prove(Problem* prb) {
     }
 
     // Preprocess if we have formulas (convert to clauses)
-    Shell::Preprocess prepro(*env.options);
-    prepro.preprocess(*prb);
+    try {
+        Shell::Preprocess prepro(*env.options);
+        prepro.preprocess(*prb);
+    } catch (Lib::UserErrorException& e) {
+        std::cerr << "[Vampire API] Preprocessing UserError: " << e.msg() << std::endl;
+        return ProofResult::UNKNOWN;
+    } catch (Lib::Exception& e) {
+        std::cerr << "[Vampire API] Preprocessing error: " << e.msg() << std::endl;
+        return ProofResult::UNKNOWN;
+    }
 
     if (debugThisCall) {
         std::cerr << "[DEBUG] After preprocessing, units:" << std::endl;
@@ -476,6 +576,67 @@ ProofResult prove(Problem* prb) {
         default:
             return ProofResult::UNKNOWN;
     }
+}
+
+void clausify(Problem* prb) {
+    if (!prb || !prb->units()) return;
+    env.setMainProblem(prb);
+    Stack<Unit*> results;
+    UnitList::Iterator it(prb->units());
+    NewCNF newCnf(env.options->naming());
+    while (it.hasNext()) {
+        Unit* u = it.next();
+        if (u->isClause()) {
+            results.push(u);
+        } else {
+            FormulaUnit* fu = static_cast<FormulaUnit*>(u);
+            Stack<Clause*> clauses;
+            newCnf.clausify(fu, clauses);
+            if (clauses.isEmpty()) {
+                Formula* f = fu->formula();
+                if (f->connective() == LITERAL) {
+                    Literal* lp = f->literal();
+                    results.push(Clause::fromArray(&lp, 1, fu->inference()));
+                } else if (f->connective() == OR) {
+                    Stack<Literal*> lits;
+                    FormulaList::Iterator fit(f->args());
+                    bool all = true;
+                    while (fit.hasNext()) {
+                        Formula* arg = fit.next();
+                        if (arg->connective() == LITERAL) lits.push(arg->literal());
+                        else { all = false; break; }
+                    }
+                    if (all) results.push(Clause::fromArray(lits.begin(), lits.size(), fu->inference()));
+                }
+            } else {
+                Stack<Unit*> temp;
+                while (clauses.isNonEmpty()) temp.push(clauses.pop());
+                while (temp.isNonEmpty()) results.push(temp.pop());
+            }
+        }
+    }
+    prb->units() = nullptr;
+    prb->invalidateEverything();
+    UnitList* newList = nullptr;
+    while (results.isNonEmpty()) UnitList::push(results.pop(), newList);
+    prb->addUnits(newList);
+}
+
+std::vector<std::string> getCNF(Problem* prb) {
+    std::vector<std::string> res;
+    if (!prb || !prb->units()) return res;
+    UnitList::Iterator it(prb->units());
+    while (it.hasNext()) {
+        Unit* u = it.next();
+        if (u->isClause()) res.push_back(clauseToString(static_cast<Clause*>(u)));
+    }
+    return res;
+}
+
+void destroyUnit(Unit* u) {
+    if (!u) return;
+    if (u->isClause()) static_cast<Clause*>(u)->decRefCnt();
+    else static_cast<FormulaUnit*>(u)->destroy();
 }
 
 Unit* getRefutation() {
