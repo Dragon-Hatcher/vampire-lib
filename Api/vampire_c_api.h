@@ -104,7 +104,30 @@ typedef enum {
     VAMPIRE_INTERP_REAL_PLUS,
     VAMPIRE_INTERP_REAL_MINUS,
     VAMPIRE_INTERP_REAL_MULTIPLY,
-    VAMPIRE_INTERP_REAL_QUOTIENT
+    VAMPIRE_INTERP_REAL_QUOTIENT,
+
+    VAMPIRE_INTERP_INT_FLOOR,
+    VAMPIRE_INTERP_INT_CEILING,
+    VAMPIRE_INTERP_INT_TRUNCATE,
+    VAMPIRE_INTERP_INT_ROUND,
+    VAMPIRE_INTERP_RAT_FLOOR,
+    VAMPIRE_INTERP_RAT_CEILING,
+    VAMPIRE_INTERP_RAT_TRUNCATE,
+    VAMPIRE_INTERP_RAT_ROUND,
+    VAMPIRE_INTERP_REAL_FLOOR,
+    VAMPIRE_INTERP_REAL_CEILING,
+    VAMPIRE_INTERP_REAL_TRUNCATE,
+    VAMPIRE_INTERP_REAL_ROUND,
+
+    VAMPIRE_INTERP_INT_TO_INT,
+    VAMPIRE_INTERP_INT_TO_RAT,
+    VAMPIRE_INTERP_INT_TO_REAL,
+    VAMPIRE_INTERP_RAT_TO_INT,
+    VAMPIRE_INTERP_RAT_TO_RAT,
+    VAMPIRE_INTERP_RAT_TO_REAL,
+    VAMPIRE_INTERP_REAL_TO_INT,
+    VAMPIRE_INTERP_REAL_TO_RAT,
+    VAMPIRE_INTERP_REAL_TO_REAL
 } vampire_interpretation_t;
 
 /** Input type for units */
@@ -470,6 +493,29 @@ unsigned int vampire_add_sort(const char* name);
 
 /** Return the sort index for the default individual sort ($i). */
 unsigned int vampire_sort_default(void);
+
+/** Return the sort index for the Boolean sort ($o) — HOL/THF. */
+unsigned int vampire_sort_bool(void);
+
+/** Register the arrow sort `from > to` (HOL/THF).  The returned index is
+ * accepted everywhere a sort index is (typed symbols, typed quantifiers). */
+unsigned int vampire_sort_arrow(unsigned int from, unsigned int to);
+
+/** HOL application `head @ arg` (curried).  `head` must be a proper term
+ * (constant or application) — its sort determines the result sort. */
+vampire_term_t* vampire_hol_app(vampire_term_t* head, vampire_term_t* arg);
+
+/** HOL application with an explicit head sort — required when the head is a
+ * VARIABLE (its sort cannot be inferred): pass the binder's arrow sort. */
+vampire_term_t* vampire_hol_app_sorted(vampire_term_t* head, unsigned int head_sort, vampire_term_t* arg);
+
+/** Wrap a Boolean-sorted term as a formula (a `$o` variable/term in formula
+ * position). */
+vampire_formula_t* vampire_bool_term_formula(vampire_term_t* t);
+
+/** Wrap a formula as a Boolean-sorted term (FOOL: a compound formula in a
+ * `$o` argument position). */
+vampire_term_t* vampire_formula_term(vampire_formula_t* f);
 
 /** Return the sort index for the integer sort ($int). */
 unsigned int vampire_sort_int(void);
