@@ -28,6 +28,7 @@
 #include "Kernel/FormulaUnit.hpp"
 #include "Kernel/Problem.hpp"
 #include "Kernel/Signature.hpp"
+#include "Kernel/HOL/HOL.hpp"
 #include "Kernel/Inference.hpp"
 #include "Kernel/InferenceStore.hpp"
 #include "Kernel/OperatorType.hpp"
@@ -146,27 +147,20 @@ void prepareForNextProof() {
 }
 
 void reset() {
-    // Reinitialize the timer (needed for timeout support after reset)
+    // Timeout support needs the timer reinitialised after a reset.
     Lib::Timer::reinitialise();
 
-    // Reset the global ordering
     Ordering::unsetGlobalOrdering();
 
-    // Reset all static caches in the kernel
     Term::resetStaticCaches();
     AtomicSort::resetStaticCaches();
     PartialOrdering::resetStaticCaches();
     TermPartialOrdering::resetStaticCaches();
     TermOrderingDiagram::resetStaticCaches();
-
-    // Reset shell static caches
     EqualityProxyMono::resetStaticCaches();
 
-    // Reset the inference store
     InferenceStore::instance()->reset();
 
-    // Delete and recreate the environment components
-    // Note: Order matters here due to dependencies
     delete env.sharing;
     delete env.signature;
     delete env.statistics;
@@ -176,9 +170,7 @@ void reset() {
     env.sharing = new TermSharing();
     env.statistics = new Statistics();
 
-    // Reset the main problem reference
-    // Note: We don't delete the old problem as it may still be referenced
-    // by the user. The user is responsible for managing problem lifetime.
+    // The old problem is left alone (not deleted) since the caller may still hold a reference to it.
 }
 
 Options& options() {
@@ -259,7 +251,18 @@ unsigned addRealConstant(const std::string& value) {
 // Sort Registration (TFF)
 // ===========================================
 
+// Compound (arrow) sorts are Kernel terms, not signature type-cons, so they
+// cannot ride the unsigned type-con id space directly: registered here and
+// flagged with the high bit, resolved transparently in reconstructSort so
+// EVERY typed entry point (typed functions, quantifiers, equality) accepts
+// them unchanged.
+static std::vector<TermList> s_compoundSorts;
+static const unsigned COMPOUND_SORT_FLAG = 0x80000000u;
+
+unsigned sortArrow(unsigned from, unsigned to);
+
 static TermList reconstructSort(unsigned id) {
+    if (id & COMPOUND_SORT_FLAG) return s_compoundSorts[id & ~COMPOUND_SORT_FLAG];
     if (id == env.signature->getDefaultSort()) return AtomicSort::defaultSort();
     if (id == env.signature->getBoolSort()) return AtomicSort::boolSort();
     if (id == env.signature->getIntSort()) return AtomicSort::intSort();
@@ -274,6 +277,36 @@ unsigned addSort(const std::string& name) {
 }
 
 unsigned defaultSort() { return env.signature->getDefaultSort(); }
+
+unsigned sortArrow(unsigned from, unsigned to) {
+    TermList arrow = AtomicSort::arrowSort(reconstructSort(from), reconstructSort(to));
+    s_compoundSorts.push_back(arrow);
+    return COMPOUND_SORT_FLAG | (unsigned)(s_compoundSorts.size() - 1);
+}
+
+// HOL application (curried `f @ x`); sorts inferred from the (proper-term)
+// head via SortHelper.
+TermList holApp(TermList head, TermList arg) {
+    return HOL::create::app(head, arg);
+}
+
+// HOL application with an explicit head sort — REQUIRED when the head is a
+// variable (`P @ X` under a `! [P: $i > $o]` binder): sort inference needs a
+// proper term, so the caller supplies the binder's arrow sort.
+TermList holAppSorted(TermList head, unsigned headSortIndex, TermList arg) {
+    return HOL::create::app(reconstructSort(headSortIndex), head, arg);
+}
+
+// A Boolean-sorted term in formula position (`X: $o` used as a formula).
+Formula* boolTermFormula(TermList t) {
+    return new BoolTermFormula(t);
+}
+
+// A formula in term position (FOOL: an `$o` argument that is a compound
+// formula, e.g. `knows @ a @ (p & q)`).
+TermList formulaTerm(Formula* f) {
+    return TermList(Term::createFormula(f));
+}
 unsigned sortBool() { return env.signature->getBoolSort(); }
 unsigned sortInt() { return env.signature->getIntSort(); }
 unsigned sortReal() { return env.signature->getRealSort(); }
@@ -520,7 +553,6 @@ Problem* problem(const std::vector<Unit*>& units) {
 static unsigned _proveCallCount = 0;
 
 ProofResult prove(Problem* prb) {
-    // Ensure problem is set
     env.setMainProblem(prb);
 
     _proveCallCount++;
@@ -535,7 +567,6 @@ ProofResult prove(Problem* prb) {
         }
     }
 
-    // Preprocess if we have formulas (convert to clauses)
     try {
         Shell::Preprocess prepro(*env.options);
         prepro.preprocess(*prb);
@@ -557,10 +588,8 @@ ProofResult prove(Problem* prb) {
         env.options->set("show_preprocessing", "off");
     }
 
-    // Run the saturation algorithm
     ProvingHelper::runVampireSaturation(*prb, *env.options);
 
-    // Convert termination reason to result
     switch (env.statistics->terminationReason) {
         case TerminationReason::REFUTATION:
             return ProofResult::PROOF;

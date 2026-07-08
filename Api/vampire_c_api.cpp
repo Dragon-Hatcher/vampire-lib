@@ -138,6 +138,27 @@ static Interpretation map_interpretation(vampire_interpretation_t interp) {
         case VAMPIRE_INTERP_REAL_MINUS: return Theory::REAL_MINUS;
         case VAMPIRE_INTERP_REAL_MULTIPLY: return Theory::REAL_MULTIPLY;
         case VAMPIRE_INTERP_REAL_QUOTIENT: return Theory::REAL_QUOTIENT;
+        case VAMPIRE_INTERP_INT_FLOOR:    return Theory::INT_FLOOR;
+        case VAMPIRE_INTERP_INT_CEILING:  return Theory::INT_CEILING;
+        case VAMPIRE_INTERP_INT_TRUNCATE: return Theory::INT_TRUNCATE;
+        case VAMPIRE_INTERP_INT_ROUND:    return Theory::INT_ROUND;
+        case VAMPIRE_INTERP_RAT_FLOOR:    return Theory::RAT_FLOOR;
+        case VAMPIRE_INTERP_RAT_CEILING:  return Theory::RAT_CEILING;
+        case VAMPIRE_INTERP_RAT_TRUNCATE: return Theory::RAT_TRUNCATE;
+        case VAMPIRE_INTERP_RAT_ROUND:    return Theory::RAT_ROUND;
+        case VAMPIRE_INTERP_REAL_FLOOR:   return Theory::REAL_FLOOR;
+        case VAMPIRE_INTERP_REAL_CEILING: return Theory::REAL_CEILING;
+        case VAMPIRE_INTERP_REAL_TRUNCATE:return Theory::REAL_TRUNCATE;
+        case VAMPIRE_INTERP_REAL_ROUND:   return Theory::REAL_ROUND;
+        case VAMPIRE_INTERP_INT_TO_INT:   return Theory::INT_TO_INT;
+        case VAMPIRE_INTERP_INT_TO_RAT:   return Theory::INT_TO_RAT;
+        case VAMPIRE_INTERP_INT_TO_REAL:  return Theory::INT_TO_REAL;
+        case VAMPIRE_INTERP_RAT_TO_INT:   return Theory::RAT_TO_INT;
+        case VAMPIRE_INTERP_RAT_TO_RAT:   return Theory::RAT_TO_RAT;
+        case VAMPIRE_INTERP_RAT_TO_REAL:  return Theory::RAT_TO_REAL;
+        case VAMPIRE_INTERP_REAL_TO_INT:  return Theory::REAL_TO_INT;
+        case VAMPIRE_INTERP_REAL_TO_RAT:  return Theory::REAL_TO_RAT;
+        case VAMPIRE_INTERP_REAL_TO_REAL: return Theory::REAL_TO_REAL;
         default: return Theory::EQUAL;
     }
 }
@@ -150,6 +171,20 @@ unsigned int vampire_add_real_constant(const char* value) { return Api::addRealC
 
 unsigned int vampire_add_sort(const char* name) { return Api::addSort(std::string(name)); }
 unsigned int vampire_sort_default(void) { return Api::defaultSort(); }
+unsigned int vampire_sort_bool(void) { return Api::sortBool(); }
+unsigned int vampire_sort_arrow(unsigned int from, unsigned int to) { return Api::sortArrow(from, to); }
+vampire_term_t* vampire_hol_app(vampire_term_t* head, vampire_term_t* arg) {
+    return FROM_TERM(Api::holApp(TO_TERM(head), TO_TERM(arg)));
+}
+vampire_term_t* vampire_hol_app_sorted(vampire_term_t* head, unsigned int head_sort, vampire_term_t* arg) {
+    return FROM_TERM(Api::holAppSorted(TO_TERM(head), head_sort, TO_TERM(arg)));
+}
+vampire_formula_t* vampire_bool_term_formula(vampire_term_t* t) {
+    return FROM_FORMULA(Api::boolTermFormula(TO_TERM(t)));
+}
+vampire_term_t* vampire_formula_term(vampire_formula_t* f) {
+    return FROM_TERM(Api::formulaTerm(TO_FORMULA(f)));
+}
 unsigned int vampire_sort_int(void) { return Api::sortInt(); }
 unsigned int vampire_sort_real(void) { return Api::sortReal(); }
 unsigned int vampire_sort_rational(void) { return Api::sortRational(); }
@@ -269,6 +304,21 @@ int vampire_extract_proof(vampire_unit_t* ref, vampire_proof_step_t** out_steps,
     for (size_t i = 0; i < cpp_steps.size(); i++) {
         steps[i].id = cpp_steps[i].id; steps[i].rule = (vampire_inference_rule_t)cpp_steps[i].rule;
         steps[i].unit = FROM_UNIT(cpp_steps[i].unit); steps[i].premise_count = cpp_steps[i].premiseIds.size();
+        // Map Vampire's UnitInputType -> the C enum.  The enums do NOT share
+        // numeric values (Vampire: AXIOM=0, ASSUMPTION=1, CONJECTURE=2,
+        // NEGATED_CONJECTURE=3; C: AXIOM=0, NEGATED_CONJECTURE=1,
+        // CONJECTURE=2), so a raw cast would mis-tag.  Previously this field
+        // was never set at all (left as uninitialised malloc memory ≈ 0 =
+        // AXIOM), which is why every proof step — including the negated
+        // conjecture — reported `axiom` to the Rust side.
+        switch (cpp_steps[i].inputType) {
+            case Kernel::UnitInputType::NEGATED_CONJECTURE:
+                steps[i].input_type = VAMPIRE_NEGATED_CONJECTURE; break;
+            case Kernel::UnitInputType::CONJECTURE:
+                steps[i].input_type = VAMPIRE_CONJECTURE; break;
+            default:
+                steps[i].input_type = VAMPIRE_AXIOM; break;
+        }
         steps[i].premise_ids = (unsigned int*)malloc(steps[i].premise_count * sizeof(unsigned int));
         for (size_t j = 0; j < steps[i].premise_count; j++) steps[i].premise_ids[j] = cpp_steps[i].premiseIds[j];
     }

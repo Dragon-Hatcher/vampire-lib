@@ -177,6 +177,11 @@ Problem* problem(const std::vector<Clause*>& clauses);
 Problem* problem(std::initializer_list<Unit*> units);
 Problem* problem(const std::vector<Unit*>& units);
 
+unsigned sortArrow(unsigned from, unsigned to);
+Kernel::TermList holApp(Kernel::TermList head, Kernel::TermList arg);
+Kernel::TermList holAppSorted(Kernel::TermList head, unsigned headSortIndex, Kernel::TermList arg);
+Kernel::Formula* boolTermFormula(Kernel::TermList t);
+Kernel::TermList formulaTerm(Kernel::Formula* f);
 ProofResult prove(Problem* prb);
 void clausify(Problem* prb);
 std::vector<std::string> getCNF(Problem* prb);
