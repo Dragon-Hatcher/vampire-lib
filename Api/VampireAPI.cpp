@@ -28,9 +28,11 @@
 #include "Kernel/FormulaUnit.hpp"
 #include "Kernel/Problem.hpp"
 #include "Kernel/Signature.hpp"
+#include "Kernel/HOL/HOL.hpp"
 #include "Kernel/Inference.hpp"
 #include "Kernel/InferenceStore.hpp"
 #include "Kernel/OperatorType.hpp"
+#include "Kernel/Theory.hpp"
 #include "Kernel/Unit.hpp"
 
 #include "Indexing/TermSharing.hpp"
@@ -38,6 +40,9 @@
 #include "Shell/Options.hpp"
 #include "Shell/Statistics.hpp"
 #include "Shell/Preprocess.hpp"
+#include "Shell/NNF.hpp"
+#include "Shell/CNF.hpp"
+#include "Shell/NewCNF.hpp"
 
 #include "Saturation/ProvingHelper.hpp"
 
@@ -142,27 +147,20 @@ void prepareForNextProof() {
 }
 
 void reset() {
-    // Reinitialize the timer (needed for timeout support after reset)
+    // Timeout support needs the timer reinitialised after a reset.
     Lib::Timer::reinitialise();
 
-    // Reset the global ordering
     Ordering::unsetGlobalOrdering();
 
-    // Reset all static caches in the kernel
     Term::resetStaticCaches();
     AtomicSort::resetStaticCaches();
     PartialOrdering::resetStaticCaches();
     TermPartialOrdering::resetStaticCaches();
     TermOrderingDiagram::resetStaticCaches();
-
-    // Reset shell static caches
     EqualityProxyMono::resetStaticCaches();
 
-    // Reset the inference store
     InferenceStore::instance()->reset();
 
-    // Delete and recreate the environment components
-    // Note: Order matters here due to dependencies
     delete env.sharing;
     delete env.signature;
     delete env.statistics;
@@ -172,9 +170,7 @@ void reset() {
     env.sharing = new TermSharing();
     env.statistics = new Statistics();
 
-    // Reset the main problem reference
-    // Note: We don't delete the old problem as it may still be referenced
-    // by the user. The user is responsible for managing problem lifetime.
+    // The old problem is left alone (not deleted) since the caller may still hold a reference to it.
 }
 
 Options& options() {
@@ -222,6 +218,115 @@ unsigned addPredicate(const std::string& name, unsigned arity) {
     env.signature->getPredicate(pred)->setType(
         OperatorType::getPredicateType(arity, argSorts.begin()));
 
+    return pred;
+}
+
+unsigned addInterpretedFunction(const std::string& name, Interpretation interp) {
+    return env.signature->addInterpretedFunction(interp, name);
+}
+
+unsigned addInterpretedPredicate(const std::string& name, Interpretation interp) {
+    return env.signature->addInterpretedPredicate(interp, name);
+}
+
+unsigned addIntegerConstant(const std::string& value) {
+    auto n = IntegerConstantType::parse(value);
+    if (n.isNone()) return 0;
+    return env.signature->addNumeralConstant(*n);
+}
+
+unsigned addRationalConstant(const std::string& value) {
+    auto n = RationalConstantType::parse(value);
+    if (n.isNone()) return 0;
+    return env.signature->addNumeralConstant(*n);
+}
+
+unsigned addRealConstant(const std::string& value) {
+    auto n = RealConstantType::parse(value);
+    if (n.isNone()) return 0;
+    return env.signature->addNumeralConstant(*n);
+}
+
+// ===========================================
+// Sort Registration (TFF)
+// ===========================================
+
+// Compound (arrow) sorts are Kernel terms, not signature type-cons, so they
+// cannot ride the unsigned type-con id space directly: registered here and
+// flagged with the high bit, resolved transparently in reconstructSort so
+// EVERY typed entry point (typed functions, quantifiers, equality) accepts
+// them unchanged.
+static std::vector<TermList> s_compoundSorts;
+static const unsigned COMPOUND_SORT_FLAG = 0x80000000u;
+
+unsigned sortArrow(unsigned from, unsigned to);
+
+static TermList reconstructSort(unsigned id) {
+    if (id & COMPOUND_SORT_FLAG) return s_compoundSorts[id & ~COMPOUND_SORT_FLAG];
+    if (id == env.signature->getDefaultSort()) return AtomicSort::defaultSort();
+    if (id == env.signature->getBoolSort()) return AtomicSort::boolSort();
+    if (id == env.signature->getIntSort()) return AtomicSort::intSort();
+    if (id == env.signature->getRealSort()) return AtomicSort::realSort();
+    if (id == env.signature->getRatSort()) return AtomicSort::rationalSort();
+    return TermList(AtomicSort::createConstant(id));
+}
+
+unsigned addSort(const std::string& name) {
+    bool added;
+    return env.signature->addTypeCon(name, 0, added);
+}
+
+unsigned defaultSort() { return env.signature->getDefaultSort(); }
+
+unsigned sortArrow(unsigned from, unsigned to) {
+    TermList arrow = AtomicSort::arrowSort(reconstructSort(from), reconstructSort(to));
+    s_compoundSorts.push_back(arrow);
+    return COMPOUND_SORT_FLAG | (unsigned)(s_compoundSorts.size() - 1);
+}
+
+// HOL application (curried `f @ x`); sorts inferred from the (proper-term)
+// head via SortHelper.
+TermList holApp(TermList head, TermList arg) {
+    return HOL::create::app(head, arg);
+}
+
+// HOL application with an explicit head sort — REQUIRED when the head is a
+// variable (`P @ X` under a `! [P: $i > $o]` binder): sort inference needs a
+// proper term, so the caller supplies the binder's arrow sort.
+TermList holAppSorted(TermList head, unsigned headSortIndex, TermList arg) {
+    return HOL::create::app(reconstructSort(headSortIndex), head, arg);
+}
+
+// A Boolean-sorted term in formula position (`X: $o` used as a formula).
+Formula* boolTermFormula(TermList t) {
+    return new BoolTermFormula(t);
+}
+
+// A formula in term position (FOOL: an `$o` argument that is a compound
+// formula, e.g. `knows @ a @ (p & q)`).
+TermList formulaTerm(Formula* f) {
+    return TermList(Term::createFormula(f));
+}
+unsigned sortBool() { return env.signature->getBoolSort(); }
+unsigned sortInt() { return env.signature->getIntSort(); }
+unsigned sortReal() { return env.signature->getRealSort(); }
+unsigned sortRational() { return env.signature->getRatSort(); }
+
+unsigned addTypedFunction(const std::string& name, const std::vector<unsigned>& argSortIndices, unsigned returnSortIndex) {
+    unsigned functor = env.signature->addFunction(name, argSortIndices.size());
+    Stack<TermList> args;
+    for (unsigned s : argSortIndices) args.push(reconstructSort(s));
+    env.signature->getFunction(functor)->setType(
+        OperatorType::getFunctionType(argSortIndices.size(), args.begin(), reconstructSort(returnSortIndex)));
+    return functor;
+}
+
+unsigned addTypedPredicate(const std::string& name, const std::vector<unsigned>& argSortIndices) {
+    unsigned pred = env.signature->addPredicate(name, argSortIndices.size());
+    Stack<TermList> args;
+    for (unsigned s : argSortIndices) args.push(reconstructSort(s));
+    env.signature->getPredicate(pred)->setType(
+        OperatorType::getPredicateType(argSortIndices.size(), args.begin()));
     return pred;
 }
 
@@ -332,6 +437,26 @@ Formula* existsF(unsigned varIndex, Formula* f) {
     return new QuantifiedFormula(EXISTS, vars, nullptr, f);
 }
 
+Formula* forallTyped(unsigned varIndex, unsigned sortIndex, Formula* f) {
+    VList* vars = nullptr;
+    VList::push(varIndex, vars);
+    SList* sorts = nullptr;
+    SList::push(reconstructSort(sortIndex), sorts);
+    return new QuantifiedFormula(FORALL, vars, sorts, f);
+}
+
+Formula* existsTyped(unsigned varIndex, unsigned sortIndex, Formula* f) {
+    VList* vars = nullptr;
+    VList::push(varIndex, vars);
+    SList* sorts = nullptr;
+    SList::push(reconstructSort(sortIndex), sorts);
+    return new QuantifiedFormula(EXISTS, vars, sorts, f);
+}
+
+Literal* typedEq(bool positive, TermList lhs, TermList rhs, unsigned sortIndex) {
+    return Literal::createEquality(positive, lhs, rhs, reconstructSort(sortIndex));
+}
+
 Formula* trueF() {
     return Formula::trueFormula();
 }
@@ -428,7 +553,6 @@ Problem* problem(const std::vector<Unit*>& units) {
 static unsigned _proveCallCount = 0;
 
 ProofResult prove(Problem* prb) {
-    // Ensure problem is set
     env.setMainProblem(prb);
 
     _proveCallCount++;
@@ -443,9 +567,16 @@ ProofResult prove(Problem* prb) {
         }
     }
 
-    // Preprocess if we have formulas (convert to clauses)
-    Shell::Preprocess prepro(*env.options);
-    prepro.preprocess(*prb);
+    try {
+        Shell::Preprocess prepro(*env.options);
+        prepro.preprocess(*prb);
+    } catch (Lib::UserErrorException& e) {
+        std::cerr << "[Vampire API] Preprocessing UserError: " << e.msg() << std::endl;
+        return ProofResult::UNKNOWN;
+    } catch (Lib::Exception& e) {
+        std::cerr << "[Vampire API] Preprocessing error: " << e.msg() << std::endl;
+        return ProofResult::UNKNOWN;
+    }
 
     if (debugThisCall) {
         std::cerr << "[DEBUG] After preprocessing, units:" << std::endl;
@@ -457,10 +588,8 @@ ProofResult prove(Problem* prb) {
         env.options->set("show_preprocessing", "off");
     }
 
-    // Run the saturation algorithm
     ProvingHelper::runVampireSaturation(*prb, *env.options);
 
-    // Convert termination reason to result
     switch (env.statistics->terminationReason) {
         case TerminationReason::REFUTATION:
             return ProofResult::PROOF;
@@ -476,6 +605,67 @@ ProofResult prove(Problem* prb) {
         default:
             return ProofResult::UNKNOWN;
     }
+}
+
+void clausify(Problem* prb) {
+    if (!prb || !prb->units()) return;
+    env.setMainProblem(prb);
+    Stack<Unit*> results;
+    UnitList::Iterator it(prb->units());
+    NewCNF newCnf(env.options->naming());
+    while (it.hasNext()) {
+        Unit* u = it.next();
+        if (u->isClause()) {
+            results.push(u);
+        } else {
+            FormulaUnit* fu = static_cast<FormulaUnit*>(u);
+            Stack<Clause*> clauses;
+            newCnf.clausify(fu, clauses);
+            if (clauses.isEmpty()) {
+                Formula* f = fu->formula();
+                if (f->connective() == LITERAL) {
+                    Literal* lp = f->literal();
+                    results.push(Clause::fromArray(&lp, 1, fu->inference()));
+                } else if (f->connective() == OR) {
+                    Stack<Literal*> lits;
+                    FormulaList::Iterator fit(f->args());
+                    bool all = true;
+                    while (fit.hasNext()) {
+                        Formula* arg = fit.next();
+                        if (arg->connective() == LITERAL) lits.push(arg->literal());
+                        else { all = false; break; }
+                    }
+                    if (all) results.push(Clause::fromArray(lits.begin(), lits.size(), fu->inference()));
+                }
+            } else {
+                Stack<Unit*> temp;
+                while (clauses.isNonEmpty()) temp.push(clauses.pop());
+                while (temp.isNonEmpty()) results.push(temp.pop());
+            }
+        }
+    }
+    prb->units() = nullptr;
+    prb->invalidateEverything();
+    UnitList* newList = nullptr;
+    while (results.isNonEmpty()) UnitList::push(results.pop(), newList);
+    prb->addUnits(newList);
+}
+
+std::vector<std::string> getCNF(Problem* prb) {
+    std::vector<std::string> res;
+    if (!prb || !prb->units()) return res;
+    UnitList::Iterator it(prb->units());
+    while (it.hasNext()) {
+        Unit* u = it.next();
+        if (u->isClause()) res.push_back(clauseToString(static_cast<Clause*>(u)));
+    }
+    return res;
+}
+
+void destroyUnit(Unit* u) {
+    if (!u) return;
+    if (u->isClause()) static_cast<Clause*>(u)->decRefCnt();
+    else static_cast<FormulaUnit*>(u)->destroy();
 }
 
 Unit* getRefutation() {

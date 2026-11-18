@@ -65,6 +65,71 @@ typedef enum {
     VAMPIRE_INCOMPLETE = 5       /* Incomplete search */
 } vampire_proof_result_t;
 
+/** Interpreted theory symbols (subset) */
+typedef enum {
+    VAMPIRE_INTERP_EQUAL,
+
+    VAMPIRE_INTERP_INT_GREATER,
+    VAMPIRE_INTERP_INT_GREATER_EQUAL,
+    VAMPIRE_INTERP_INT_LESS,
+    VAMPIRE_INTERP_INT_LESS_EQUAL,
+    VAMPIRE_INTERP_INT_DIVIDES,
+
+    VAMPIRE_INTERP_INT_SUCCESSOR,
+    VAMPIRE_INTERP_INT_UNARY_MINUS,
+    VAMPIRE_INTERP_INT_PLUS,
+    VAMPIRE_INTERP_INT_MINUS,
+    VAMPIRE_INTERP_INT_MULTIPLY,
+    VAMPIRE_INTERP_INT_QUOTIENT_E,
+    VAMPIRE_INTERP_INT_QUOTIENT_T,
+    VAMPIRE_INTERP_INT_QUOTIENT_F,
+    VAMPIRE_INTERP_INT_REMAINDER_E,
+    VAMPIRE_INTERP_INT_REMAINDER_T,
+    VAMPIRE_INTERP_INT_REMAINDER_F,
+    VAMPIRE_INTERP_INT_ABS,
+
+    VAMPIRE_INTERP_RAT_GREATER,
+    VAMPIRE_INTERP_RAT_GREATER_EQUAL,
+    VAMPIRE_INTERP_RAT_LESS,
+    VAMPIRE_INTERP_RAT_LESS_EQUAL,
+    VAMPIRE_INTERP_RAT_PLUS,
+    VAMPIRE_INTERP_RAT_MINUS,
+    VAMPIRE_INTERP_RAT_MULTIPLY,
+    VAMPIRE_INTERP_RAT_QUOTIENT,
+
+    VAMPIRE_INTERP_REAL_GREATER,
+    VAMPIRE_INTERP_REAL_GREATER_EQUAL,
+    VAMPIRE_INTERP_REAL_LESS,
+    VAMPIRE_INTERP_REAL_LESS_EQUAL,
+    VAMPIRE_INTERP_REAL_PLUS,
+    VAMPIRE_INTERP_REAL_MINUS,
+    VAMPIRE_INTERP_REAL_MULTIPLY,
+    VAMPIRE_INTERP_REAL_QUOTIENT,
+
+    VAMPIRE_INTERP_INT_FLOOR,
+    VAMPIRE_INTERP_INT_CEILING,
+    VAMPIRE_INTERP_INT_TRUNCATE,
+    VAMPIRE_INTERP_INT_ROUND,
+    VAMPIRE_INTERP_RAT_FLOOR,
+    VAMPIRE_INTERP_RAT_CEILING,
+    VAMPIRE_INTERP_RAT_TRUNCATE,
+    VAMPIRE_INTERP_RAT_ROUND,
+    VAMPIRE_INTERP_REAL_FLOOR,
+    VAMPIRE_INTERP_REAL_CEILING,
+    VAMPIRE_INTERP_REAL_TRUNCATE,
+    VAMPIRE_INTERP_REAL_ROUND,
+
+    VAMPIRE_INTERP_INT_TO_INT,
+    VAMPIRE_INTERP_INT_TO_RAT,
+    VAMPIRE_INTERP_INT_TO_REAL,
+    VAMPIRE_INTERP_RAT_TO_INT,
+    VAMPIRE_INTERP_RAT_TO_RAT,
+    VAMPIRE_INTERP_RAT_TO_REAL,
+    VAMPIRE_INTERP_REAL_TO_INT,
+    VAMPIRE_INTERP_REAL_TO_RAT,
+    VAMPIRE_INTERP_REAL_TO_REAL
+} vampire_interpretation_t;
+
 /** Input type for units */
 typedef enum {
     VAMPIRE_AXIOM = 0,
@@ -348,6 +413,14 @@ void vampire_set_show_proof(bool show);
  */
 void vampire_set_saturation_algorithm(const char* algorithm);
 
+/**
+ * Set a generic Vampire option by name and value string.
+ * This maps directly to env.options->set(name, value).
+ * Example: vampire_set_option("mode", "casc") enables CASC portfolio mode.
+ * Returns 0 on success, -1 if the option name or value is invalid.
+ */
+int vampire_set_option(const char* name, const char* value);
+
 /* ===========================================
  * Symbol Registration
  * =========================================== */
@@ -368,6 +441,159 @@ unsigned int vampire_add_function(const char* name, unsigned int arity);
  * @return predicate index for use in literal construction
  */
 unsigned int vampire_add_predicate(const char* name, unsigned int arity);
+
+/**
+ * Register an interpreted function symbol.
+ * @param name Symbol name (e.g. "$sum", "$product")
+ * @param interp The theory interpretation
+ * @return functor index
+ */
+unsigned int vampire_add_interpreted_function(const char* name, vampire_interpretation_t interp);
+
+/**
+ * Register an interpreted predicate symbol.
+ * @param name Symbol name (e.g. "$less", "$greater")
+ * @param interp The theory interpretation
+ * @return predicate index
+ */
+unsigned int vampire_add_interpreted_predicate(const char* name, vampire_interpretation_t interp);
+
+/**
+ * Register an interpreted integer constant.
+ * @param value The integer value (as a string to support large numbers)
+ * @return functor index
+ */
+unsigned int vampire_add_integer_constant(const char* value);
+
+/**
+ * Register an interpreted rational constant.
+ * @param value The rational value (as a string, e.g. "1/2")
+ * @return functor index
+ */
+unsigned int vampire_add_rational_constant(const char* value);
+
+/**
+ * Register an interpreted real constant.
+ * @param value The real value (as a string, e.g. "3.14")
+ * @return functor index
+ */
+unsigned int vampire_add_real_constant(const char* value);
+
+/* ===========================================
+ * Sort Registration (TFF)
+ * =========================================== */
+
+/**
+ * Register a user-defined sort by name.
+ * Idempotent: calling with the same name returns the same sort index.
+ * @param name Sort name (null-terminated string, e.g. "person")
+ * @return sort index for use in typed symbol registration and quantifiers
+ */
+unsigned int vampire_add_sort(const char* name);
+
+/** Return the sort index for the default individual sort ($i). */
+unsigned int vampire_sort_default(void);
+
+/** Return the sort index for the Boolean sort ($o) — HOL/THF. */
+unsigned int vampire_sort_bool(void);
+
+/** Register the arrow sort `from > to` (HOL/THF).  The returned index is
+ * accepted everywhere a sort index is (typed symbols, typed quantifiers). */
+unsigned int vampire_sort_arrow(unsigned int from, unsigned int to);
+
+/** HOL application `head @ arg` (curried).  `head` must be a proper term
+ * (constant or application) — its sort determines the result sort. */
+vampire_term_t* vampire_hol_app(vampire_term_t* head, vampire_term_t* arg);
+
+/** HOL application with an explicit head sort — required when the head is a
+ * VARIABLE (its sort cannot be inferred): pass the binder's arrow sort. */
+vampire_term_t* vampire_hol_app_sorted(vampire_term_t* head, unsigned int head_sort, vampire_term_t* arg);
+
+/** Wrap a Boolean-sorted term as a formula (a `$o` variable/term in formula
+ * position). */
+vampire_formula_t* vampire_bool_term_formula(vampire_term_t* t);
+
+/** Wrap a formula as a Boolean-sorted term (FOOL: a compound formula in a
+ * `$o` argument position). */
+vampire_term_t* vampire_formula_term(vampire_formula_t* f);
+
+/** Return the sort index for the integer sort ($int). */
+unsigned int vampire_sort_int(void);
+
+/** Return the sort index for the real sort ($real). */
+unsigned int vampire_sort_real(void);
+
+/** Return the sort index for the rational sort ($rat). */
+unsigned int vampire_sort_rational(void);
+
+/* ===========================================
+ * Typed Symbol Registration (TFF)
+ * =========================================== */
+
+/**
+ * Register a typed function symbol.
+ * Only sets the sort signature when the symbol is newly created.
+ * @param name Symbol name (null-terminated string)
+ * @param arg_sort_indices Array of sort indices for each argument
+ * @param arity Number of arguments (length of arg_sort_indices)
+ * @param return_sort_index Sort index for the return type
+ * @return functor index for use in term construction
+ */
+unsigned int vampire_add_typed_function(const char* name,
+                                        unsigned int* arg_sort_indices,
+                                        size_t arity,
+                                        unsigned int return_sort_index);
+
+/**
+ * Register a typed predicate symbol.
+ * Only sets the sort signature when the symbol is newly created.
+ * @param name Symbol name (null-terminated string)
+ * @param arg_sort_indices Array of sort indices for each argument
+ * @param arity Number of arguments (length of arg_sort_indices)
+ * @return predicate index for use in literal construction
+ */
+unsigned int vampire_add_typed_predicate(const char* name,
+                                         unsigned int* arg_sort_indices,
+                                         size_t arity);
+
+/* ===========================================
+ * Typed Formula Construction (TFF)
+ * =========================================== */
+
+/**
+ * Create a universally quantified formula with a sort annotation on the bound variable.
+ * @param var_index The variable index to bind
+ * @param sort_index The sort index for the bound variable
+ * @param f The body formula
+ * @return Formula handle
+ */
+vampire_formula_t* vampire_forall_typed(unsigned int var_index,
+                                        unsigned int sort_index,
+                                        vampire_formula_t* f);
+
+/**
+ * Create an existentially quantified formula with a sort annotation on the bound variable.
+ * @param var_index The variable index to bind
+ * @param sort_index The sort index for the bound variable
+ * @param f The body formula
+ * @return Formula handle
+ */
+vampire_formula_t* vampire_exists_typed(unsigned int var_index,
+                                        unsigned int sort_index,
+                                        vampire_formula_t* f);
+
+/**
+ * Create a typed equality literal (s = t or s != t) with an explicit sort.
+ * @param positive true for equality, false for disequality
+ * @param lhs Left-hand side term
+ * @param rhs Right-hand side term
+ * @param sort_index The sort index of the terms
+ * @return Literal handle
+ */
+vampire_literal_t* vampire_typed_eq(bool positive,
+                                    vampire_term_t* lhs,
+                                    vampire_term_t* rhs,
+                                    unsigned int sort_index);
 
 /* ===========================================
  * Term Construction
@@ -518,6 +744,12 @@ vampire_unit_t* vampire_axiom_formula(vampire_formula_t* f);
  */
 vampire_unit_t* vampire_conjecture_formula(vampire_formula_t* f);
 
+/**
+ * Release a unit handle (axiom or conjecture formula).
+ * @param unit The unit to free
+ */
+void vampire_free_unit(vampire_unit_t* unit);
+
 /* ===========================================
  * Clause Construction
  * =========================================== */
@@ -575,6 +807,55 @@ vampire_problem_t* vampire_problem_from_units(vampire_unit_t** units, size_t cou
  * @return The proof result
  */
 vampire_proof_result_t vampire_prove(vampire_problem_t* problem);
+
+/**
+ * Preprocess a problem, converting all formulas to CNF clauses.
+ * @param problem The problem to clausify
+ * @return Number of clauses after clausification
+ */
+size_t vampire_clausify(vampire_problem_t* problem);
+
+/**
+ * Get the CNF representation of the problem as strings.
+ * @param problem The clausified problem
+ * @param out_clauses Output array of strings (caller must free with vampire_free_string_array)
+ * @param out_count Output number of clauses
+ * @return 0 on success, negative on error
+ */
+int vampire_get_cnf(vampire_problem_t* problem, char*** out_clauses, size_t* out_count);
+
+/**
+ * Enumerate the units in a problem as a heap-allocated array of handles.
+ *
+ * Typically called after vampire_clausify(), in which case every returned unit
+ * is a clause (and can be converted via vampire_unit_as_clause).  The returned
+ * handles are borrowed -- they are owned by the problem and must NOT be freed
+ * with vampire_free_unit.  Free the containing array with
+ * vampire_free_unit_array().
+ *
+ * @param problem The problem to read units from
+ * @param out_units Pointer to receive the heap-allocated array of unit handles
+ * @param out_count Pointer to receive the number of units
+ * @return 0 on success, -1 on error
+ */
+int vampire_problem_units(vampire_problem_t* problem, vampire_unit_t*** out_units, size_t* out_count);
+
+/**
+ * Free a unit-handle array returned by vampire_problem_units().
+ *
+ * Only the outer array is freed; the individual units remain owned by the
+ * problem.
+ *
+ * @param units The array to free
+ */
+void vampire_free_unit_array(vampire_unit_t** units);
+
+/**
+ * Free an array of strings returned by vampire_get_cnf.
+ * @param strings The array
+ * @param count The number of strings
+ */
+void vampire_free_string_array(char** strings, size_t count);
 
 /**
  * Get the refutation (proof) after a successful vampire_prove() call.
@@ -655,6 +936,51 @@ vampire_clause_t* vampire_unit_as_clause(vampire_unit_t* unit);
  * @return Formula handle, or NULL if unit is not a formula
  */
 vampire_formula_t* vampire_unit_as_formula(vampire_unit_t* unit);
+
+/**
+ * Vampire's unique identifier for this unit.
+ *
+ * Every Unit Vampire creates (axiom, conjecture, derived clause, or
+ * derived formula) carries a monotonically-allocated unit_number.
+ * Callers that want to attribute a post-clausify clause to the
+ * input axiom it originated from can:
+ *
+ *   1. Record the unit_number of each axiom via vampire_axiom_formula.
+ *   2. Clausify.
+ *   3. For every output unit, walk vampire_unit_parent transitively
+ *      until a recorded input number is reached.
+ *
+ * @param unit The unit (axiom, conjecture, or derived).
+ * @return The unit's Vampire-internal number.
+ */
+uint32_t vampire_unit_number(vampire_unit_t* unit);
+
+/**
+ * Number of direct inference-parents of this unit.
+ *
+ * Input units (axioms, conjecture) typically return 0.  Derived units
+ * (e.g. CNF output clauses) return >= 1 — one for each direct parent
+ * in the inference graph.
+ *
+ * @param unit The unit.
+ * @return Parent count.
+ */
+size_t vampire_unit_parent_count(vampire_unit_t* unit);
+
+/**
+ * The `i`-th direct inference-parent of this unit.
+ *
+ * Parents are enumerated in the order Vampire's Inference::Iterator
+ * yields them.  The returned pointer aliases an existing unit in
+ * Vampire's internal state; do NOT free it.  The pointer is only
+ * valid as long as Vampire's state that produced it lives (i.e.
+ * until the next vampire_prepare_for_next_proof() call).
+ *
+ * @param unit The unit.
+ * @param i The 0-based parent index (must be < vampire_unit_parent_count).
+ * @return The parent unit, or NULL if `i` is out of range.
+ */
+vampire_unit_t* vampire_unit_parent(vampire_unit_t* unit, size_t i);
 
 /**
  * Check if a clause is empty (represents false).
@@ -743,6 +1069,71 @@ const char* vampire_rule_name(vampire_inference_rule_t rule);
  * @return String name (static, do not free)
  */
 const char* vampire_input_type_name(vampire_input_type_t input_type);
+
+/* ===========================================
+ * Structured Literal / Term Readers
+ *
+ * These complement vampire_get_literals() / vampire_clause_*() by giving
+ * the caller access to the internal structure of a Literal or Term
+ * without going through stringification.  Used by consumers that need
+ * to reason about clause structure (e.g. canonical-hash-based clause
+ * deduplication).  All pointers returned here are borrowed views into
+ * Vampire's internal hash-consed term storage unless otherwise noted.
+ * =========================================== */
+
+/** Return the predicate functor index of `lit`. */
+unsigned int vampire_literal_predicate(vampire_literal_t* lit);
+
+/** Return true if `lit` is a positive literal. */
+bool vampire_literal_is_positive(vampire_literal_t* lit);
+
+/** Return true if `lit` is an equality literal (functor 0). */
+bool vampire_literal_is_equality(vampire_literal_t* lit);
+
+/** Return the arity of `lit` (argument count). */
+size_t vampire_literal_arity(vampire_literal_t* lit);
+
+/**
+ * Return the i-th argument of `lit` as a freshly heap-allocated
+ * vampire_term_t (wrapping a TermList value copy).  The caller owns
+ * the wrapper and does not need to free it today (matches the
+ * convention of the other vampire_term_t producers).
+ */
+vampire_term_t* vampire_literal_arg(vampire_literal_t* lit, size_t i);
+
+/** Return true if `term` is a variable (ordinary or special). */
+bool vampire_term_is_var(vampire_term_t* term);
+
+/** Return the variable index of `term`; undefined if not a variable. */
+unsigned int vampire_term_var_index(vampire_term_t* term);
+
+/**
+ * Return the function functor index of `term`; undefined if `term` is
+ * a variable.  Callers should check vampire_term_is_var() first.
+ */
+unsigned int vampire_term_functor(vampire_term_t* term);
+
+/** Return the arity (argument count) of `term`; 0 for variables and constants. */
+size_t vampire_term_arity(vampire_term_t* term);
+
+/**
+ * Return the i-th argument of `term` as a freshly heap-allocated
+ * vampire_term_t wrapper.  Undefined if `term` is a variable.
+ */
+vampire_term_t* vampire_term_arg(vampire_term_t* term, size_t i);
+
+/**
+ * Return a pointer to the (borrowed, static-lifetime) name of the
+ * function symbol with index `functor_idx`.  The pointer is valid for
+ * the lifetime of the Vampire environment.  Do not free.
+ */
+const char* vampire_functor_name(unsigned int functor_idx);
+
+/**
+ * Return a pointer to the (borrowed, static-lifetime) name of the
+ * predicate symbol with index `predicate_idx`.  Do not free.
+ */
+const char* vampire_predicate_name(unsigned int predicate_idx);
 
 #ifdef __cplusplus
 }

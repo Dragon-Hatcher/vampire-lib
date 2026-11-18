@@ -10,20 +10,21 @@
 /**
  * @file vampire_c_api.cpp
  * Implementation of the plain C API for Vampire.
- *
- * This file wraps the C++ API in C-compatible functions suitable for FFI.
  */
 
 #include "vampire_c_api.h"
 #include "VampireAPI.hpp"
+#include "Lib/Environment.hpp"
+#include "Kernel/Signature.hpp"
+#include "Kernel/Inference.hpp"
 
 #include <cstring>
 #include <fstream>
 #include <functional>
 #include <sstream>
 #include <vector>
+#include <iostream>
 
-// Internal type conversions - cast opaque pointers to internal types
 #define TO_TERM(t) (*reinterpret_cast<Kernel::TermList*>(t))
 #define TO_LITERAL(l) (reinterpret_cast<Kernel::Literal*>(l))
 #define TO_FORMULA(f) (reinterpret_cast<Kernel::Formula*>(f))
@@ -38,595 +39,435 @@
 #define FROM_CLAUSE(c) (reinterpret_cast<vampire_clause_t*>(c))
 #define FROM_PROBLEM(p) (reinterpret_cast<vampire_problem_t*>(p))
 
-// Helper: structural equality for Formula (formulas are not hash-consed)
 static bool formulaEqual(const Kernel::Formula* a, const Kernel::Formula* b) {
     if (a == b) return true;
     if (a->connective() != b->connective()) return false;
     switch (a->connective()) {
-        case Kernel::TRUE:
-        case Kernel::FALSE:
-            return true;
-        case Kernel::LITERAL:
-            // Literals are hash-consed, so pointer equality is structural equality
-            return a->literal() == b->literal();
-        case Kernel::NOT:
-            return formulaEqual(a->uarg(), b->uarg());
-        case Kernel::AND:
-        case Kernel::OR: {
-            auto* la = a->args();
-            auto* lb = b->args();
-            while (la && lb) {
-                if (!formulaEqual(la->head(), lb->head())) return false;
-                la = la->tail();
-                lb = lb->tail();
-            }
+        case Kernel::TRUE: case Kernel::FALSE: return true;
+        case Kernel::LITERAL: return a->literal() == b->literal();
+        case Kernel::NOT: return formulaEqual(a->uarg(), b->uarg());
+        case Kernel::AND: case Kernel::OR: {
+            auto* la = a->args(); auto* lb = b->args();
+            while (la && lb) { if (!formulaEqual(la->head(), lb->head())) return false; la = la->tail(); lb = lb->tail(); }
             return !la && !lb;
         }
-        case Kernel::IMP:
-        case Kernel::IFF:
-        case Kernel::XOR:
+        case Kernel::IMP: case Kernel::IFF: case Kernel::XOR:
             return formulaEqual(a->left(), b->left()) && formulaEqual(a->right(), b->right());
-        case Kernel::FORALL:
-        case Kernel::EXISTS: {
-            auto* va = a->vars();
-            auto* vb = b->vars();
-            while (va && vb) {
-                if (va->head() != vb->head()) return false;
-                va = va->tail();
-                vb = vb->tail();
-            }
+        case Kernel::FORALL: case Kernel::EXISTS: {
+            auto* va = a->vars(); auto* vb = b->vars();
+            while (va && vb) { if (va->head() != vb->head()) return false; va = va->tail(); vb = vb->tail(); }
             return !va && !vb && formulaEqual(a->qarg(), b->qarg());
         }
-        case Kernel::BOOL_TERM:
-            return a->getBooleanTerm() == b->getBooleanTerm();
-        default:
-            return false;
+        default: return false;
     }
 }
 
-static size_t hashCombine(size_t h, size_t v) {
-    return h ^ (v + 0x9e3779b9 + (h << 6) + (h >> 2));
-}
-
-// Helper: structural hash for Formula
+static size_t hashCombine(size_t h, size_t v) { return h ^ (v + 0x9e3779b9 + (h << 6) + (h >> 2)); }
 static size_t formulaHash(const Kernel::Formula* f) {
     size_t h = std::hash<unsigned>{}(static_cast<unsigned>(f->connective()));
     switch (f->connective()) {
-        case Kernel::TRUE:
-        case Kernel::FALSE:
-            break;
-        case Kernel::LITERAL:
-            h = hashCombine(h, std::hash<const void*>{}(f->literal()));
-            break;
-        case Kernel::NOT:
-            h = hashCombine(h, formulaHash(f->uarg()));
-            break;
-        case Kernel::AND:
-        case Kernel::OR: {
-            auto* l = f->args();
-            while (l) {
-                h = hashCombine(h, formulaHash(l->head()));
-                l = l->tail();
-            }
-            break;
-        }
-        case Kernel::IMP:
-        case Kernel::IFF:
-        case Kernel::XOR:
-            h = hashCombine(h, formulaHash(f->left()));
-            h = hashCombine(h, formulaHash(f->right()));
-            break;
-        case Kernel::FORALL:
-        case Kernel::EXISTS: {
-            auto* v = f->vars();
-            while (v) {
-                h = hashCombine(h, std::hash<unsigned>{}(v->head()));
-                v = v->tail();
-            }
-            h = hashCombine(h, formulaHash(f->qarg()));
-            break;
-        }
-        case Kernel::BOOL_TERM:
-            h = hashCombine(h, std::hash<uint64_t>{}(f->getBooleanTerm().content()));
-            break;
-        default:
-            break;
+        case Kernel::LITERAL: h = hashCombine(h, std::hash<const void*>{}(f->literal())); break;
+        case Kernel::NOT: h = hashCombine(h, formulaHash(f->uarg())); break;
+        case Kernel::AND: case Kernel::OR: { auto* l = f->args(); while (l) { h = hashCombine(h, formulaHash(l->head())); l = l->tail(); } break; }
+        case Kernel::IMP: case Kernel::IFF: case Kernel::XOR: h = hashCombine(h, formulaHash(f->left())); h = hashCombine(h, formulaHash(f->right())); break;
+        case Kernel::FORALL: case Kernel::EXISTS: { auto* v = f->vars(); while (v) { h = hashCombine(h, std::hash<unsigned>{}(v->head())); v = v->tail(); } h = hashCombine(h, formulaHash(f->qarg())); break; }
+        default: break;
     }
     return h;
 }
 
 extern "C" {
 
-/* ===========================================
- * Library Initialization and Reset
- * =========================================== */
+void vampire_prepare_for_next_proof(void) { Api::prepareForNextProof(); }
+void vampire_reset(void) { Api::reset(); }
 
-void vampire_prepare_for_next_proof(void) {
-    Api::prepareForNextProof();
-}
-
-void vampire_reset(void) {
-    Api::reset();
-}
-
-/* ===========================================
- * Options Configuration
- * =========================================== */
-
-void vampire_set_time_limit(int seconds) {
-    Api::options().setTimeLimitInSeconds(seconds);
-}
-
-void vampire_set_time_limit_deciseconds(int deciseconds) {
-    Api::options().setTimeLimitInDeciseconds(deciseconds);
-}
-
-void vampire_set_time_limit_milliseconds(int milliseconds) {
-    Api::options().setTimeLimitInMilliseconds(milliseconds);
-}
-
-void vampire_set_show_proof(bool show) {
-    if (show) {
-        Api::options().setProof(Shell::Options::Proof::ON);
-    } else {
-        Api::options().setProof(Shell::Options::Proof::OFF);
-    }
-}
+void vampire_set_time_limit_milliseconds(int ms) { Api::options().setTimeLimitInMilliseconds(ms); }
 
 void vampire_set_saturation_algorithm(const char* algorithm) {
-    Api::options().set("saturation_algorithm", algorithm);
+    try { Api::options().set("saturation_algorithm", algorithm); } catch (...) {}
 }
 
-/* ===========================================
- * Symbol Registration
- * =========================================== */
-
-unsigned int vampire_add_function(const char* name, unsigned int arity) {
-    return Api::addFunction(std::string(name), arity);
-}
-
-unsigned int vampire_add_predicate(const char* name, unsigned int arity) {
-    return Api::addPredicate(std::string(name), arity);
-}
-
-/* ===========================================
- * Term Construction
- * =========================================== */
-
-vampire_term_t* vampire_var(unsigned int index) {
-    return FROM_TERM(Api::var(index));
-}
-
-vampire_term_t* vampire_constant(unsigned int functor) {
-    return FROM_TERM(Api::constant(functor));
-}
-
-vampire_term_t* vampire_term(unsigned int functor, vampire_term_t** args, size_t arg_count) {
-    std::vector<Kernel::TermList> cpp_args;
-    cpp_args.reserve(arg_count);
-    for (size_t i = 0; i < arg_count; i++) {
-        cpp_args.push_back(TO_TERM(args[i]));
+int vampire_set_option(const char* name, const char* value) {
+    try {
+        Api::options().set(name, value);
+        return 0;
+    } catch (Lib::UserErrorException& e) {
+        std::cerr << "[Vampire] set_option error: " << e.msg() << std::endl;
+        return -1;
+    } catch (...) {
+        return -1;
     }
+}
+
+unsigned int vampire_add_function(const char* name, unsigned int arity) { return Api::addFunction(std::string(name), arity); }
+unsigned int vampire_add_predicate(const char* name, unsigned int arity) { return Api::addPredicate(std::string(name), arity); }
+
+static Interpretation map_interpretation(vampire_interpretation_t interp) {
+    switch (interp) {
+        case VAMPIRE_INTERP_EQUAL: return Theory::EQUAL;
+        case VAMPIRE_INTERP_INT_GREATER: return Theory::INT_GREATER;
+        case VAMPIRE_INTERP_INT_GREATER_EQUAL: return Theory::INT_GREATER_EQUAL;
+        case VAMPIRE_INTERP_INT_LESS: return Theory::INT_LESS;
+        case VAMPIRE_INTERP_INT_LESS_EQUAL: return Theory::INT_LESS_EQUAL;
+        case VAMPIRE_INTERP_INT_DIVIDES: return Theory::INT_DIVIDES;
+        case VAMPIRE_INTERP_INT_SUCCESSOR: return Theory::INT_SUCCESSOR;
+        case VAMPIRE_INTERP_INT_UNARY_MINUS: return Theory::INT_UNARY_MINUS;
+        case VAMPIRE_INTERP_INT_PLUS: return Theory::INT_PLUS;
+        case VAMPIRE_INTERP_INT_MINUS: return Theory::INT_MINUS;
+        case VAMPIRE_INTERP_INT_MULTIPLY: return Theory::INT_MULTIPLY;
+        case VAMPIRE_INTERP_INT_QUOTIENT_E: return Theory::INT_QUOTIENT_E;
+        case VAMPIRE_INTERP_INT_QUOTIENT_T: return Theory::INT_QUOTIENT_T;
+        case VAMPIRE_INTERP_INT_QUOTIENT_F: return Theory::INT_QUOTIENT_F;
+        case VAMPIRE_INTERP_INT_REMAINDER_E: return Theory::INT_REMAINDER_E;
+        case VAMPIRE_INTERP_INT_REMAINDER_T: return Theory::INT_REMAINDER_T;
+        case VAMPIRE_INTERP_INT_REMAINDER_F: return Theory::INT_REMAINDER_F;
+        case VAMPIRE_INTERP_INT_ABS: return Theory::INT_ABS;
+        case VAMPIRE_INTERP_RAT_GREATER: return Theory::RAT_GREATER;
+        case VAMPIRE_INTERP_RAT_GREATER_EQUAL: return Theory::RAT_GREATER_EQUAL;
+        case VAMPIRE_INTERP_RAT_LESS: return Theory::RAT_LESS;
+        case VAMPIRE_INTERP_RAT_LESS_EQUAL: return Theory::RAT_LESS_EQUAL;
+        case VAMPIRE_INTERP_RAT_PLUS: return Theory::RAT_PLUS;
+        case VAMPIRE_INTERP_RAT_MINUS: return Theory::RAT_MINUS;
+        case VAMPIRE_INTERP_RAT_MULTIPLY: return Theory::RAT_MULTIPLY;
+        case VAMPIRE_INTERP_RAT_QUOTIENT: return Theory::RAT_QUOTIENT;
+        case VAMPIRE_INTERP_REAL_GREATER: return Theory::REAL_GREATER;
+        case VAMPIRE_INTERP_REAL_GREATER_EQUAL: return Theory::REAL_GREATER_EQUAL;
+        case VAMPIRE_INTERP_REAL_LESS: return Theory::REAL_LESS;
+        case VAMPIRE_INTERP_REAL_LESS_EQUAL: return Theory::REAL_LESS_EQUAL;
+        case VAMPIRE_INTERP_REAL_PLUS: return Theory::REAL_PLUS;
+        case VAMPIRE_INTERP_REAL_MINUS: return Theory::REAL_MINUS;
+        case VAMPIRE_INTERP_REAL_MULTIPLY: return Theory::REAL_MULTIPLY;
+        case VAMPIRE_INTERP_REAL_QUOTIENT: return Theory::REAL_QUOTIENT;
+        case VAMPIRE_INTERP_INT_FLOOR:    return Theory::INT_FLOOR;
+        case VAMPIRE_INTERP_INT_CEILING:  return Theory::INT_CEILING;
+        case VAMPIRE_INTERP_INT_TRUNCATE: return Theory::INT_TRUNCATE;
+        case VAMPIRE_INTERP_INT_ROUND:    return Theory::INT_ROUND;
+        case VAMPIRE_INTERP_RAT_FLOOR:    return Theory::RAT_FLOOR;
+        case VAMPIRE_INTERP_RAT_CEILING:  return Theory::RAT_CEILING;
+        case VAMPIRE_INTERP_RAT_TRUNCATE: return Theory::RAT_TRUNCATE;
+        case VAMPIRE_INTERP_RAT_ROUND:    return Theory::RAT_ROUND;
+        case VAMPIRE_INTERP_REAL_FLOOR:   return Theory::REAL_FLOOR;
+        case VAMPIRE_INTERP_REAL_CEILING: return Theory::REAL_CEILING;
+        case VAMPIRE_INTERP_REAL_TRUNCATE:return Theory::REAL_TRUNCATE;
+        case VAMPIRE_INTERP_REAL_ROUND:   return Theory::REAL_ROUND;
+        case VAMPIRE_INTERP_INT_TO_INT:   return Theory::INT_TO_INT;
+        case VAMPIRE_INTERP_INT_TO_RAT:   return Theory::INT_TO_RAT;
+        case VAMPIRE_INTERP_INT_TO_REAL:  return Theory::INT_TO_REAL;
+        case VAMPIRE_INTERP_RAT_TO_INT:   return Theory::RAT_TO_INT;
+        case VAMPIRE_INTERP_RAT_TO_RAT:   return Theory::RAT_TO_RAT;
+        case VAMPIRE_INTERP_RAT_TO_REAL:  return Theory::RAT_TO_REAL;
+        case VAMPIRE_INTERP_REAL_TO_INT:  return Theory::REAL_TO_INT;
+        case VAMPIRE_INTERP_REAL_TO_RAT:  return Theory::REAL_TO_RAT;
+        case VAMPIRE_INTERP_REAL_TO_REAL: return Theory::REAL_TO_REAL;
+        default: return Theory::EQUAL;
+    }
+}
+
+unsigned int vampire_add_interpreted_function(const char* name, vampire_interpretation_t interp) { return Api::addInterpretedFunction(std::string(name), map_interpretation(interp)); }
+unsigned int vampire_add_interpreted_predicate(const char* name, vampire_interpretation_t interp) { return Api::addInterpretedPredicate(std::string(name), map_interpretation(interp)); }
+unsigned int vampire_add_integer_constant(const char* value) { return Api::addIntegerConstant(std::string(value)); }
+unsigned int vampire_add_rational_constant(const char* value) { return Api::addRationalConstant(std::string(value)); }
+unsigned int vampire_add_real_constant(const char* value) { return Api::addRealConstant(std::string(value)); }
+
+unsigned int vampire_add_sort(const char* name) { return Api::addSort(std::string(name)); }
+unsigned int vampire_sort_default(void) { return Api::defaultSort(); }
+unsigned int vampire_sort_bool(void) { return Api::sortBool(); }
+unsigned int vampire_sort_arrow(unsigned int from, unsigned int to) { return Api::sortArrow(from, to); }
+vampire_term_t* vampire_hol_app(vampire_term_t* head, vampire_term_t* arg) {
+    return FROM_TERM(Api::holApp(TO_TERM(head), TO_TERM(arg)));
+}
+vampire_term_t* vampire_hol_app_sorted(vampire_term_t* head, unsigned int head_sort, vampire_term_t* arg) {
+    return FROM_TERM(Api::holAppSorted(TO_TERM(head), head_sort, TO_TERM(arg)));
+}
+vampire_formula_t* vampire_bool_term_formula(vampire_term_t* t) {
+    return FROM_FORMULA(Api::boolTermFormula(TO_TERM(t)));
+}
+vampire_term_t* vampire_formula_term(vampire_formula_t* f) {
+    return FROM_TERM(Api::formulaTerm(TO_FORMULA(f)));
+}
+unsigned int vampire_sort_int(void) { return Api::sortInt(); }
+unsigned int vampire_sort_real(void) { return Api::sortReal(); }
+unsigned int vampire_sort_rational(void) { return Api::sortRational(); }
+
+unsigned int vampire_add_typed_function(const char* name, unsigned int* arg_sorts, size_t arity, unsigned int res_sort) {
+    std::vector<unsigned> args(arg_sorts, arg_sorts + arity);
+    return Api::addTypedFunction(std::string(name), args, res_sort);
+}
+unsigned int vampire_add_typed_predicate(const char* name, unsigned int* arg_sorts, size_t arity) {
+    std::vector<unsigned> args(arg_sorts, arg_sorts + arity);
+    return Api::addTypedPredicate(std::string(name), args);
+}
+
+vampire_formula_t* vampire_forall_typed(unsigned int var, unsigned int sort, vampire_formula_t* f) { return FROM_FORMULA(Api::forallTyped(var, sort, TO_FORMULA(f))); }
+vampire_formula_t* vampire_exists_typed(unsigned int var, unsigned int sort, vampire_formula_t* f) { return FROM_FORMULA(Api::existsTyped(var, sort, TO_FORMULA(f))); }
+vampire_literal_t* vampire_typed_eq(bool pos, vampire_term_t* lhs, vampire_term_t* rhs, unsigned int sort) { return FROM_LITERAL(Api::typedEq(pos, TO_TERM(lhs), TO_TERM(rhs), sort)); }
+
+vampire_term_t* vampire_var(unsigned int index) { return FROM_TERM(Api::var(index)); }
+vampire_term_t* vampire_constant(unsigned int functor) { return FROM_TERM(Api::constant(functor)); }
+vampire_term_t* vampire_term(unsigned int functor, vampire_term_t** args, size_t count) {
+    std::vector<Kernel::TermList> cpp_args;
+    for (size_t i = 0; i < count; i++) cpp_args.push_back(TO_TERM(args[i]));
     return FROM_TERM(Api::term(functor, cpp_args));
 }
+char* vampire_term_to_string(vampire_term_t* t) { return strdup(Api::termToString(TO_TERM(t)).c_str()); }
 
-/* ===========================================
- * Literal Construction
- * =========================================== */
-
-vampire_literal_t* vampire_eq(bool positive, vampire_term_t* lhs, vampire_term_t* rhs) {
-    return FROM_LITERAL(Api::eq(positive, TO_TERM(lhs), TO_TERM(rhs)));
-}
-
-vampire_literal_t* vampire_lit(unsigned int pred, bool positive,
-                                vampire_term_t** args, size_t arg_count) {
+vampire_literal_t* vampire_eq(bool pos, vampire_term_t* lhs, vampire_term_t* rhs) { return FROM_LITERAL(Api::eq(pos, TO_TERM(lhs), TO_TERM(rhs))); }
+vampire_literal_t* vampire_lit(unsigned int pred, bool positive, vampire_term_t** args, size_t count) {
     std::vector<Kernel::TermList> cpp_args;
-    cpp_args.reserve(arg_count);
-    for (size_t i = 0; i < arg_count; i++) {
-        cpp_args.push_back(TO_TERM(args[i]));
-    }
+    for (size_t i = 0; i < count; i++) cpp_args.push_back(TO_TERM(args[i]));
     return FROM_LITERAL(Api::lit(pred, positive, cpp_args));
 }
+vampire_literal_t* vampire_neg(vampire_literal_t* l) { return FROM_LITERAL(Api::neg(TO_LITERAL(l))); }
 
-vampire_literal_t* vampire_neg(vampire_literal_t* l) {
-    return FROM_LITERAL(Api::neg(TO_LITERAL(l)));
-}
-
-/* ===========================================
- * Formula Construction
- * =========================================== */
-
-vampire_formula_t* vampire_atom(vampire_literal_t* l) {
-    return FROM_FORMULA(Api::atom(TO_LITERAL(l)));
-}
-
-vampire_formula_t* vampire_not(vampire_formula_t* f) {
-    return FROM_FORMULA(Api::notF(TO_FORMULA(f)));
-}
-
+vampire_formula_t* vampire_atom(vampire_literal_t* l) { return FROM_FORMULA(Api::atom(TO_LITERAL(l))); }
+vampire_formula_t* vampire_not(vampire_formula_t* f) { return FROM_FORMULA(Api::notF(TO_FORMULA(f))); }
 vampire_formula_t* vampire_and(vampire_formula_t** formulas, size_t count) {
-    std::vector<Kernel::Formula*> cpp_formulas;
-    cpp_formulas.reserve(count);
-    for (size_t i = 0; i < count; i++) {
-        cpp_formulas.push_back(TO_FORMULA(formulas[i]));
-    }
-    return FROM_FORMULA(Api::andF(cpp_formulas));
+    std::vector<Kernel::Formula*> cpp_fs;
+    for (size_t i = 0; i < count; i++) cpp_fs.push_back(TO_FORMULA(formulas[i]));
+    return FROM_FORMULA(Api::andF(cpp_fs));
 }
-
 vampire_formula_t* vampire_or(vampire_formula_t** formulas, size_t count) {
-    std::vector<Kernel::Formula*> cpp_formulas;
-    cpp_formulas.reserve(count);
-    for (size_t i = 0; i < count; i++) {
-        cpp_formulas.push_back(TO_FORMULA(formulas[i]));
-    }
-    return FROM_FORMULA(Api::orF(cpp_formulas));
+    std::vector<Kernel::Formula*> cpp_fs;
+    for (size_t i = 0; i < count; i++) cpp_fs.push_back(TO_FORMULA(formulas[i]));
+    return FROM_FORMULA(Api::orF(cpp_fs));
 }
+vampire_formula_t* vampire_imp(vampire_formula_t* lhs, vampire_formula_t* rhs) { return FROM_FORMULA(Api::impF(TO_FORMULA(lhs), TO_FORMULA(rhs))); }
+vampire_formula_t* vampire_iff(vampire_formula_t* lhs, vampire_formula_t* rhs) { return FROM_FORMULA(Api::iffF(TO_FORMULA(lhs), TO_FORMULA(rhs))); }
+vampire_formula_t* vampire_forall(unsigned int var, vampire_formula_t* f) { return FROM_FORMULA(Api::forallF(var, TO_FORMULA(f))); }
+vampire_formula_t* vampire_exists(unsigned int var, vampire_formula_t* f) { return FROM_FORMULA(Api::existsF(var, TO_FORMULA(f))); }
+vampire_formula_t* vampire_true(void) { return FROM_FORMULA(Api::trueF()); }
+vampire_formula_t* vampire_false(void) { return FROM_FORMULA(Api::falseF()); }
+char* vampire_formula_to_string(vampire_formula_t* f) { return strdup(Api::formulaToString(TO_FORMULA(f)).c_str()); }
 
-vampire_formula_t* vampire_imp(vampire_formula_t* lhs, vampire_formula_t* rhs) {
-    return FROM_FORMULA(Api::impF(TO_FORMULA(lhs), TO_FORMULA(rhs)));
-}
-
-vampire_formula_t* vampire_iff(vampire_formula_t* lhs, vampire_formula_t* rhs) {
-    return FROM_FORMULA(Api::iffF(TO_FORMULA(lhs), TO_FORMULA(rhs)));
-}
-
-vampire_formula_t* vampire_forall(unsigned int var_index, vampire_formula_t* f) {
-    return FROM_FORMULA(Api::forallF(var_index, TO_FORMULA(f)));
-}
-
-vampire_formula_t* vampire_exists(unsigned int var_index, vampire_formula_t* f) {
-    return FROM_FORMULA(Api::existsF(var_index, TO_FORMULA(f)));
-}
-
-vampire_formula_t* vampire_true(void) {
-    return FROM_FORMULA(Api::trueF());
-}
-
-vampire_formula_t* vampire_false(void) {
-    return FROM_FORMULA(Api::falseF());
-}
-
-vampire_unit_t* vampire_axiom_formula(vampire_formula_t* f) {
-    return FROM_UNIT(Api::axiomF(TO_FORMULA(f)));
-}
-
-vampire_unit_t* vampire_conjecture_formula(vampire_formula_t* f) {
-    return FROM_UNIT(Api::conjectureF(TO_FORMULA(f)));
-}
-
-/* ===========================================
- * Clause Construction
- * =========================================== */
-
-vampire_clause_t* vampire_axiom_clause(vampire_literal_t** literals, size_t count) {
-    std::vector<Kernel::Literal*> cpp_literals;
-    cpp_literals.reserve(count);
-    for (size_t i = 0; i < count; i++) {
-        cpp_literals.push_back(TO_LITERAL(literals[i]));
-    }
-    return FROM_CLAUSE(Api::axiom(cpp_literals));
-}
-
-vampire_clause_t* vampire_conjecture_clause(vampire_literal_t** literals, size_t count) {
-    std::vector<Kernel::Literal*> cpp_literals;
-    cpp_literals.reserve(count);
-    for (size_t i = 0; i < count; i++) {
-        cpp_literals.push_back(TO_LITERAL(literals[i]));
-    }
-    return FROM_CLAUSE(Api::conjecture(cpp_literals));
-}
-
-vampire_clause_t* vampire_clause(vampire_literal_t** literals, size_t count,
-                                  vampire_input_type_t input_type) {
-    std::vector<Kernel::Literal*> cpp_literals;
-    cpp_literals.reserve(count);
-    for (size_t i = 0; i < count; i++) {
-        cpp_literals.push_back(TO_LITERAL(literals[i]));
-    }
-
-    Kernel::UnitInputType cpp_input_type;
-    switch (input_type) {
-        case VAMPIRE_AXIOM:
-            cpp_input_type = Kernel::UnitInputType::AXIOM;
-            break;
-        case VAMPIRE_NEGATED_CONJECTURE:
-            cpp_input_type = Kernel::UnitInputType::NEGATED_CONJECTURE;
-            break;
-        case VAMPIRE_CONJECTURE:
-            cpp_input_type = Kernel::UnitInputType::CONJECTURE;
-            break;
-        default:
-            cpp_input_type = Kernel::UnitInputType::AXIOM;
-            break;
-    }
-
-    return FROM_CLAUSE(Api::clause(cpp_literals, cpp_input_type));
-}
-
-/* ===========================================
- * Problem and Proving
- * =========================================== */
-
-vampire_problem_t* vampire_problem_from_clauses(vampire_clause_t** clauses, size_t count) {
-    std::vector<Kernel::Clause*> cpp_clauses;
-    cpp_clauses.reserve(count);
-    for (size_t i = 0; i < count; i++) {
-        cpp_clauses.push_back(TO_CLAUSE(clauses[i]));
-    }
-    return FROM_PROBLEM(Api::problem(cpp_clauses));
-}
+vampire_unit_t* vampire_axiom_formula(vampire_formula_t* f) { return FROM_UNIT(Api::axiomF(TO_FORMULA(f))); }
+vampire_unit_t* vampire_conjecture_formula(vampire_formula_t* f) { return FROM_UNIT(Api::conjectureF(TO_FORMULA(f))); }
 
 vampire_problem_t* vampire_problem_from_units(vampire_unit_t** units, size_t count) {
     std::vector<Kernel::Unit*> cpp_units;
-    cpp_units.reserve(count);
-    for (size_t i = 0; i < count; i++) {
-        cpp_units.push_back(TO_UNIT(units[i]));
-    }
+    for (size_t i = 0; i < count; i++) cpp_units.push_back(TO_UNIT(units[i]));
     return FROM_PROBLEM(Api::problem(cpp_units));
 }
 
 vampire_proof_result_t vampire_prove(vampire_problem_t* problem) {
-    Api::ProofResult result = Api::prove(TO_PROBLEM(problem));
-
-    switch (result) {
-        case Api::ProofResult::PROOF:
-            return VAMPIRE_PROOF;
-        case Api::ProofResult::SATISFIABLE:
-            return VAMPIRE_SATISFIABLE;
-        case Api::ProofResult::TIMEOUT:
-            return VAMPIRE_TIMEOUT;
-        case Api::ProofResult::MEMORY_LIMIT:
-            return VAMPIRE_MEMORY_LIMIT;
-        case Api::ProofResult::INCOMPLETE:
-            return VAMPIRE_INCOMPLETE;
-        default:
-            return VAMPIRE_UNKNOWN;
+    try {
+        Api::ProofResult result = Api::prove(TO_PROBLEM(problem));
+        if (result == Api::ProofResult::PROOF) return VAMPIRE_PROOF;
+        if (result == Api::ProofResult::SATISFIABLE) return VAMPIRE_SATISFIABLE;
+        if (result == Api::ProofResult::TIMEOUT) return VAMPIRE_TIMEOUT;
+        if (result == Api::ProofResult::MEMORY_LIMIT) return VAMPIRE_MEMORY_LIMIT;
+        if (result == Api::ProofResult::INCOMPLETE) return VAMPIRE_INCOMPLETE;
+        return VAMPIRE_UNKNOWN;
+    } catch (std::exception& e) {
+        std::cerr << "[Vampire] prove() std::exception: " << e.what() << std::endl;
+        return VAMPIRE_UNKNOWN;
+    } catch (...) {
+        std::cerr << "[Vampire] prove() unknown exception" << std::endl;
+        return VAMPIRE_UNKNOWN;
     }
 }
 
-vampire_unit_t* vampire_get_refutation(void) {
-    return FROM_UNIT(Api::getRefutation());
-}
-
-void vampire_print_proof(vampire_unit_t* refutation) {
-    Api::printProof(std::cout, TO_UNIT(refutation));
-}
-
-int vampire_print_proof_to_file(const char* filename, vampire_unit_t* refutation) {
-    std::ofstream out(filename);
-    if (!out) {
-        return -1;
+// Wrap Api::clausify in try/catch so that C++ exceptions thrown by
+// NewCNF (e.g. on formulas with shapes the clausifier chokes on) do
+// NOT propagate across the FFI boundary as foreign exceptions and
+// abort the Rust process.  Returns (size_t)-1 on exception so the
+// caller can skip the offending formula and continue.
+size_t vampire_clausify(vampire_problem_t* problem) {
+    try {
+        Api::clausify(TO_PROBLEM(problem));
+        return Api::getCNF(TO_PROBLEM(problem)).size();
+    } catch (Lib::Exception& e) {
+        std::cerr << "[Vampire] clausify() Lib::Exception: " << e.msg() << std::endl;
+        return static_cast<size_t>(-1);
+    } catch (std::exception& e) {
+        std::cerr << "[Vampire] clausify() std::exception: " << e.what() << std::endl;
+        return static_cast<size_t>(-1);
+    } catch (...) {
+        std::cerr << "[Vampire] clausify() unknown exception" << std::endl;
+        return static_cast<size_t>(-1);
     }
-    Api::printProof(out, TO_UNIT(refutation));
-    out.close();
+}
+int vampire_get_cnf(vampire_problem_t* problem, char*** out_clauses, size_t* out_count) {
+    std::vector<std::string> cpp_clauses = Api::getCNF(TO_PROBLEM(problem));
+    *out_count = cpp_clauses.size();
+    char** clauses = (char**)malloc(cpp_clauses.size() * sizeof(char*));
+    for (size_t i = 0; i < cpp_clauses.size(); i++) clauses[i] = strdup(cpp_clauses[i].c_str());
+    *out_clauses = clauses;
     return 0;
 }
+void vampire_free_string_array(char** strings, size_t count) { for (size_t i = 0; i < count; i++) free(strings[i]); free(strings); }
 
-/* ===========================================
- * Structured Proof Access
- * =========================================== */
-
-static vampire_input_type_t convert_input_type(Kernel::UnitInputType input_type) {
-    switch (input_type) {
-        case Kernel::UnitInputType::AXIOM:
-            return VAMPIRE_AXIOM;
-        case Kernel::UnitInputType::NEGATED_CONJECTURE:
-            return VAMPIRE_NEGATED_CONJECTURE;
-        case Kernel::UnitInputType::CONJECTURE:
-            return VAMPIRE_CONJECTURE;
-        default:
-            return VAMPIRE_AXIOM;
-    }
-}
-
-int vampire_extract_proof(vampire_unit_t* refutation,
-                          vampire_proof_step_t** out_steps,
-                          size_t* out_count) {
-    if (!refutation || !out_steps || !out_count) {
-        return -1;
-    }
-
-    std::vector<Api::ProofStep> cpp_steps = Api::extractProof(TO_UNIT(refutation));
-
-    if (cpp_steps.empty()) {
-        *out_steps = nullptr;
-        *out_count = 0;
-        return 0;
-    }
-
-    vampire_proof_step_t* steps = (vampire_proof_step_t*)malloc(cpp_steps.size() * sizeof(vampire_proof_step_t));
-    if (!steps) {
-        return -1;
-    }
-
-    for (size_t i = 0; i < cpp_steps.size(); i++) {
-        const Api::ProofStep& cpp_step = cpp_steps[i];
-        vampire_proof_step_t& step = steps[i];
-
-        step.id = cpp_step.id;
-        step.rule = static_cast<vampire_inference_rule_t>(static_cast<unsigned char>(cpp_step.rule));
-        step.input_type = convert_input_type(cpp_step.inputType);
-        step.unit = FROM_UNIT(cpp_step.unit);
-        step.premise_count = cpp_step.premiseIds.size();
-
-        if (step.premise_count > 0) {
-            step.premise_ids = (unsigned int*)malloc(step.premise_count * sizeof(unsigned int));
-            if (!step.premise_ids) {
-                // Clean up already allocated premise_ids
-                for (size_t j = 0; j < i; j++) {
-                    free(steps[j].premise_ids);
-                }
-                free(steps);
-                return -1;
-            }
-            for (size_t j = 0; j < step.premise_count; j++) {
-                step.premise_ids[j] = cpp_step.premiseIds[j];
-            }
-        } else {
-            step.premise_ids = nullptr;
-        }
-    }
-
-    *out_steps = steps;
+vampire_unit_t* vampire_get_refutation(void) { return FROM_UNIT(Api::getRefutation()); }
+int vampire_extract_proof(vampire_unit_t* ref, vampire_proof_step_t** out_steps, size_t* out_count) {
+    std::vector<Api::ProofStep> cpp_steps = Api::extractProof(TO_UNIT(ref));
     *out_count = cpp_steps.size();
-    return 0;
+    vampire_proof_step_t* steps = (vampire_proof_step_t*)malloc(cpp_steps.size() * sizeof(vampire_proof_step_t));
+    for (size_t i = 0; i < cpp_steps.size(); i++) {
+        steps[i].id = cpp_steps[i].id; steps[i].rule = (vampire_inference_rule_t)cpp_steps[i].rule;
+        steps[i].unit = FROM_UNIT(cpp_steps[i].unit); steps[i].premise_count = cpp_steps[i].premiseIds.size();
+        // Map Vampire's UnitInputType -> the C enum.  The enums do NOT share
+        // numeric values (Vampire: AXIOM=0, ASSUMPTION=1, CONJECTURE=2,
+        // NEGATED_CONJECTURE=3; C: AXIOM=0, NEGATED_CONJECTURE=1,
+        // CONJECTURE=2), so a raw cast would mis-tag.  Previously this field
+        // was never set at all (left as uninitialised malloc memory ≈ 0 =
+        // AXIOM), which is why every proof step — including the negated
+        // conjecture — reported `axiom` to the Rust side.
+        switch (cpp_steps[i].inputType) {
+            case Kernel::UnitInputType::NEGATED_CONJECTURE:
+                steps[i].input_type = VAMPIRE_NEGATED_CONJECTURE; break;
+            case Kernel::UnitInputType::CONJECTURE:
+                steps[i].input_type = VAMPIRE_CONJECTURE; break;
+            default:
+                steps[i].input_type = VAMPIRE_AXIOM; break;
+        }
+        steps[i].premise_ids = (unsigned int*)malloc(steps[i].premise_count * sizeof(unsigned int));
+        for (size_t j = 0; j < steps[i].premise_count; j++) steps[i].premise_ids[j] = cpp_steps[i].premiseIds[j];
+    }
+    *out_steps = steps; return 0;
+}
+void vampire_free_proof_steps(vampire_proof_step_t* steps, size_t count) { for (size_t i = 0; i < count; i++) free(steps[i].premise_ids); free(steps); }
+vampire_formula_t* vampire_unit_as_formula(vampire_unit_t* u) { return FROM_FORMULA(TO_UNIT(u)->getFormula()); }
+void vampire_free_unit(vampire_unit_t* u) { Api::destroyUnit(TO_UNIT(u)); }
+
+char* vampire_clause_to_string(vampire_clause_t* c) { return strdup(Api::clauseToString(TO_CLAUSE(c)).c_str()); }
+void vampire_free_string(char* s) { free(s); }
+bool vampire_term_equal(vampire_term_t* a, vampire_term_t* b) { return TO_TERM(a) == TO_TERM(b); }
+uint64_t vampire_term_hash(vampire_term_t* a) { return TO_TERM(a).content(); }
+bool vampire_formula_equal(vampire_formula_t* a, vampire_formula_t* b) { return formulaEqual(TO_FORMULA(a), TO_FORMULA(b)); }
+uint64_t vampire_formula_hash(vampire_formula_t* a) { return static_cast<uint64_t>(formulaHash(TO_FORMULA(a))); }
+
+// ---- Structured Literal / Term readers -------------------------------------
+//
+// Thin wrappers over Kernel::Literal / Kernel::Term / Kernel::TermList that
+// surface the structure the Rust IR layer needs to rebuild a vampire_prover
+// clause without round-tripping through string parsing.  All returned
+// vampire_term_t* pointers wrap heap-allocated TermList copies (matching
+// FROM_TERM's convention elsewhere in this file).
+
+unsigned int vampire_literal_predicate(vampire_literal_t* lit) {
+    return TO_LITERAL(lit)->functor();
 }
 
-void vampire_free_proof_steps(vampire_proof_step_t* steps, size_t count) {
-    if (!steps) return;
-
-    for (size_t i = 0; i < count; i++) {
-        free(steps[i].premise_ids);
-    }
-    free(steps);
+bool vampire_literal_is_positive(vampire_literal_t* lit) {
+    return TO_LITERAL(lit)->isPositive();
 }
 
-int vampire_get_literals(vampire_clause_t* clause,
-                         vampire_literal_t*** out_literals,
-                         size_t* out_count) {
-    if (!clause || !out_literals || !out_count) {
-        return -1;
-    }
-
-    std::vector<Kernel::Literal*> cpp_literals = Api::getLiterals(TO_CLAUSE(clause));
-
-    if (cpp_literals.empty()) {
-        *out_literals = nullptr;
-        *out_count = 0;
-        return 0;
-    }
-
-    vampire_literal_t** literals = (vampire_literal_t**)malloc(cpp_literals.size() * sizeof(vampire_literal_t*));
-    if (!literals) {
-        return -1;
-    }
-
-    for (size_t i = 0; i < cpp_literals.size(); i++) {
-        literals[i] = FROM_LITERAL(cpp_literals[i]);
-    }
-
-    *out_literals = literals;
-    *out_count = cpp_literals.size();
-    return 0;
+bool vampire_literal_is_equality(vampire_literal_t* lit) {
+    return TO_LITERAL(lit)->isEquality();
 }
 
-void vampire_free_literals(vampire_literal_t** literals) {
-    free(literals);
+size_t vampire_literal_arity(vampire_literal_t* lit) {
+    return TO_LITERAL(lit)->arity();
 }
 
-vampire_clause_t* vampire_unit_as_clause(vampire_unit_t* unit) {
+vampire_term_t* vampire_literal_arg(vampire_literal_t* lit, size_t i) {
+    return FROM_TERM(*TO_LITERAL(lit)->nthArgument(static_cast<int>(i)));
+}
+
+bool vampire_term_is_var(vampire_term_t* term) {
+    return TO_TERM(term).isVar();
+}
+
+unsigned int vampire_term_var_index(vampire_term_t* term) {
+    return TO_TERM(term).var();
+}
+
+unsigned int vampire_term_functor(vampire_term_t* term) {
+    return TO_TERM(term).term()->functor();
+}
+
+size_t vampire_term_arity(vampire_term_t* term) {
+    Kernel::TermList& tl = TO_TERM(term);
+    if (tl.isVar()) return 0;
+    return tl.term()->arity();
+}
+
+vampire_term_t* vampire_term_arg(vampire_term_t* term, size_t i) {
+    return FROM_TERM(*TO_TERM(term).term()->nthArgument(static_cast<int>(i)));
+}
+
+const char* vampire_functor_name(unsigned int functor_idx) {
+    return Lib::env.signature->getFunction(functor_idx)->name().c_str();
+}
+
+const char* vampire_predicate_name(unsigned int predicate_idx) {
+    return Lib::env.signature->getPredicate(predicate_idx)->name().c_str();
+}
+
+// ---- Clause / Unit readers --------------------------------------------------
+//
+// Fill-ins for entry points declared in the header but previously undefined
+// (vampire_unit_as_clause, vampire_clause_is_empty, vampire_get_literals,
+// vampire_free_literals) plus the post-clausify unit enumerator.  Together
+// with the structured literal/term readers above, these let a Rust caller
+// walk a post-clausify Problem down to individual Term structure without
+// round-tripping through string parsing.
+
+vampire_clause_t* vampire_unit_as_clause(vampire_unit_t* u) {
+    Kernel::Unit* unit = TO_UNIT(u);
+    return (unit && unit->isClause()) ? FROM_CLAUSE(unit->asClause()) : nullptr;
+}
+bool vampire_clause_is_empty(vampire_clause_t* c) { return TO_CLAUSE(c)->isEmpty(); }
+
+// -- Unit identity + inference-graph walk for batch clausification ---------
+//
+// These three shims together let a Rust caller attribute a
+// post-clausify output clause back to the input axiom it originated
+// from, without having to run clausify once per axiom.  Vampire
+// populates Unit::number() at construction time and builds a full
+// Inference tree recording direct parents — everything we need is
+// already tracked internally; we just expose it.
+
+uint32_t vampire_unit_number(vampire_unit_t* u) {
+    Kernel::Unit* unit = TO_UNIT(u);
+    return unit ? (uint32_t)unit->number() : 0u;
+}
+
+size_t vampire_unit_parent_count(vampire_unit_t* u) {
+    Kernel::Unit* unit = TO_UNIT(u);
+    if (!unit) return 0;
+    const Kernel::Inference& inf = unit->inference();
+    Kernel::Inference::Iterator it = inf.iterator();
+    size_t count = 0;
+    while (inf.hasNext(it)) { (void)inf.next(it); count++; }
+    return count;
+}
+
+vampire_unit_t* vampire_unit_parent(vampire_unit_t* u, size_t idx) {
+    Kernel::Unit* unit = TO_UNIT(u);
     if (!unit) return nullptr;
-
-    Kernel::Unit* u = TO_UNIT(unit);
-    if (u->isClause()) {
-        return FROM_CLAUSE(static_cast<Kernel::Clause*>(u));
+    const Kernel::Inference& inf = unit->inference();
+    Kernel::Inference::Iterator it = inf.iterator();
+    size_t pos = 0;
+    while (inf.hasNext(it)) {
+        Kernel::Unit* parent = inf.next(it);
+        if (pos == idx) return FROM_UNIT(parent);
+        pos++;
     }
     return nullptr;
 }
 
-vampire_formula_t* vampire_unit_as_formula(vampire_unit_t* unit) {
-    if (!unit) return nullptr;
-
-    Kernel::Unit* u = TO_UNIT(unit);
-    Kernel::Formula* f = u->getFormula();
-    if (f) {        
-        return FROM_FORMULA(f);
-    }
-    return nullptr;
+int vampire_get_literals(vampire_clause_t* c, vampire_literal_t*** out_literals, size_t* out_count) {
+    std::vector<Kernel::Literal*> lits = Api::getLiterals(TO_CLAUSE(c));
+    *out_count = lits.size();
+    vampire_literal_t** arr = (vampire_literal_t**)malloc(lits.size() * sizeof(vampire_literal_t*));
+    for (size_t i = 0; i < lits.size(); i++) arr[i] = FROM_LITERAL(lits[i]);
+    *out_literals = arr;
+    return 0;
 }
+void vampire_free_literals(vampire_literal_t** literals) { free(literals); }
 
-bool vampire_clause_is_empty(vampire_clause_t* clause) {
-    if (!clause) return false;
-    return TO_CLAUSE(clause)->isEmpty();
+int vampire_problem_units(vampire_problem_t* problem, vampire_unit_t*** out_units, size_t* out_count) {
+    Kernel::Problem* prb = TO_PROBLEM(problem);
+    if (!prb) { *out_units = nullptr; *out_count = 0; return -1; }
+    std::vector<Kernel::Unit*> tmp;
+    Kernel::UnitList::Iterator it(prb->units());
+    while (it.hasNext()) tmp.push_back(it.next());
+    *out_count = tmp.size();
+    vampire_unit_t** arr = (vampire_unit_t**)malloc(tmp.size() * sizeof(vampire_unit_t*));
+    for (size_t i = 0; i < tmp.size(); i++) arr[i] = FROM_UNIT(tmp[i]);
+    *out_units = arr;
+    return 0;
 }
-
-/* ===========================================
- * String Conversions
- * =========================================== */
-
-char* vampire_term_to_string(vampire_term_t* term) {
-    if (!term) {
-        return nullptr;
-    }
-
-    std::string str = Api::termToString(TO_TERM(term));
-    char* result = static_cast<char*>(malloc(str.length() + 1));
-    if (result) {
-        std::strcpy(result, str.c_str());
-    }
-    return result;
-}
-
-char* vampire_literal_to_string(vampire_literal_t* literal) {
-    if (!literal) {
-        return nullptr;
-    }
-
-    std::string str = Api::literalToString(TO_LITERAL(literal));
-    char* result = static_cast<char*>(malloc(str.length() + 1));
-    if (result) {
-        std::strcpy(result, str.c_str());
-    }
-    return result;
-}
-
-char* vampire_clause_to_string(vampire_clause_t* clause) {
-    if (!clause) {
-        return nullptr;
-    }
-
-    std::string str = Api::clauseToString(TO_CLAUSE(clause));
-    char* result = static_cast<char*>(malloc(str.length() + 1));
-    if (result) {
-        std::strcpy(result, str.c_str());
-    }
-    return result;
-}
-
-char* vampire_formula_to_string(vampire_formula_t* formula) {
-    if (!formula) {
-        return nullptr;
-    }
-
-    std::string str = Api::formulaToString(TO_FORMULA(formula));
-    char* result = static_cast<char*>(malloc(str.length() + 1));
-    if (result) {
-        std::strcpy(result, str.c_str());
-    }
-    return result;
-}
-
-void vampire_free_string(char* str) {
-    free(str);
-}
-
-const char* vampire_input_type_name(vampire_input_type_t input_type) {
-    switch (input_type) {
-        case VAMPIRE_AXIOM: return "axiom";
-        case VAMPIRE_NEGATED_CONJECTURE: return "negated_conjecture";
-        case VAMPIRE_CONJECTURE: return "conjecture";
-        default: return "unknown";
-    }
-}
-
-/* ===========================================
- * Structural Equality and Hashing
- * =========================================== */
-
-bool vampire_term_equal(vampire_term_t* a, vampire_term_t* b) {
-    return TO_TERM(a) == TO_TERM(b);
-}
-
-uint64_t vampire_term_hash(vampire_term_t* a) {
-    return TO_TERM(a).content();
-}
-
-bool vampire_formula_equal(vampire_formula_t* a, vampire_formula_t* b) {
-    return formulaEqual(TO_FORMULA(a), TO_FORMULA(b));
-}
-
-uint64_t vampire_formula_hash(vampire_formula_t* a) {
-    return static_cast<uint64_t>(formulaHash(TO_FORMULA(a)));
-}
+void vampire_free_unit_array(vampire_unit_t** units) { free(units); }
 
 } // extern "C"
